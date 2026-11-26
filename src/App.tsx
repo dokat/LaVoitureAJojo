@@ -1,12 +1,17 @@
-// Routes v1 (milestone 3) : login public, tout le reste protégé.
+// Routes v1 : login public, tout le reste protégé dans le layout mobile
+// (milestone 5 : dashboard, historique, saisie ; compte = écran D8/M3).
 // basename = BASE_URL pour que react-router fonctionne aussi sous le
 // sous-chemin GitHub Pages /<dépôt>/ (D17, notes milestone 8).
 import { BrowserRouter, Route, Routes } from 'react-router'
+import { AppShell } from '@/components/AppShell'
 import { AccountPage } from '@/features/auth/AccountPage'
 import { AuthCallbackPage } from '@/features/auth/AuthCallbackPage'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
+import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { HistoryPage } from '@/features/history/HistoryPage'
+import { AddReadingPage } from '@/features/readings/AddReadingPage'
 
 function App() {
   return (
@@ -16,13 +21,17 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route
-            path="/"
             element={
               <RequireAuth>
-                <AccountPage />
+                <AppShell />
               </RequireAuth>
             }
-          />
+          >
+            <Route index element={<DashboardPage />} />
+            <Route path="saisie" element={<AddReadingPage />} />
+            <Route path="historique" element={<HistoryPage />} />
+            <Route path="compte" element={<AccountPage />} />
+          </Route>
         </Routes>
       </AuthProvider>
     </BrowserRouter>

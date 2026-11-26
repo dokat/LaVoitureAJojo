@@ -11,7 +11,7 @@ pièges, consignes pour la session suivante).
 | 2   | Schéma & RLS        | ✅ terminé        |
 | 3   | Authentification    | 🟡 test manuel dû |
 | 4   | Cœur métier         | ✅ terminé        |
-| 5   | UI v1               | ⬜ à venir        |
+| 5   | UI v1               | ✅ terminé        |
 | 6   | Admin & soft-delete | ⬜ à venir        |
 | 7   | Offline / PWA       | ⬜ à venir        |
 | 8   | CI & déploiement    | ✅ terminé        |
@@ -194,19 +194,71 @@ Notes :
   le filtre admin (M6) ; le formulaire pré-remplit `readingAt` à « maintenant »
   et passe par `useOdometerValidation` avant `addReading` (D14).
 
-## Milestone 5 — UI v1
+## Milestone 5 — UI v1 ✅
 
-- [ ] Dashboard : dernier km, dernier relevé, graphique Recharts (package
+- [x] Dashboard : dernier km, dernier relevé, graphique Recharts (package
       chart shadcn), bouton saisie
-- [ ] Historique : liste inversée, photo cliquable (signed URL)
-- [ ] Formulaire de saisie mobile-first : km (clavier numérique), date/heure
+- [x] Historique : liste inversée, photo cliquable (signed URL)
+- [x] Formulaire de saisie mobile-first : km (clavier numérique), date/heure
       (défaut maintenant, éditable — D14), % essence, notes,
       caméra/photos (`capture`)
-- [ ] Navigation par routes + layout mobile
+- [x] Navigation par routes + layout mobile
 
 Prérequis : milestone 4.
 
-Notes : —
+Notes :
+
+- Blocs shadcn ajoutés : `chart` (+ recharts en dépendance, D12), `dialog`
+  (visualiseur photo), `textarea`, `badge`. `button.tsx` non écrasé (le CLI
+  proposait de le remplacer ; refusé — la version en repo est validée).
+  Deux warnings oxlint `only-export-components` s'ajoutent à celui de
+  button.tsx : `badge.tsx` exporte `badgeVariants` — propre aux fichiers
+  générés shadcn, préexistant par pattern.
+- Structure : `features/dashboard|history|readings` (écrans),
+  `components/AppShell.tsx` (layout mobile : en-tête + nav basse fixe
+  Dashboard/Saisir/Historique), routes `/`, `/saisie`, `/historique`,
+  `/compte` protégées sous `<RequireAuth>` + layout ; `AccountPage` déclassé
+  de `/` vers `/compte` (l'écran était explicitement transitoire M3).
+  Nouvelle couche fine : `hooks/usePhotoUrl` (URL signée à la demande, D16 —
+  régénérée à chaque ouverture du visualiseur, jamais au chargement de liste)
+  et `lib/format.ts` (formatage fr-FR + conversions datetime-local ↔ Date,
+  sémantique locale D14).
+- `useReadings` est instancié par écran (pas de store global) : chaque route
+  refait son fetch au montage — acceptable à l'échelle D1, à garder en tête
+  si M7 introduit un cache.
+- D25 implémenté : le formulaire affiche « Relevé enregistré, mais la photo
+  n'a pas pu être envoyée : … » quand `addReading` retourne `photoError`.
+- Vérifié en réel (browser + projet Supabase, véhicule **Dev** activé le
+  temps de la session puis restauré sur Honda) : login compte de test,
+  dashboard vide, saisie km+essence+notes+photo → relevé + upload (photo
+  rendue à 1600 px : compression D16 confirmée par `naturalWidth`), historique
+  trié du plus récent, régression D6 refusée **côté client** avec le message
+  du hook, rétro-saisie (49 900 km la veille) acceptée, zéro erreur console.
+- **Deux pièges de fixture SQL** (à réutiliser pour tout compte de test) :
+  1. `auth.users.instance_id` doit valoir `00000000-0000-0000-0000-000000000000`
+     (pas NULL) — sinon GoTrue ne « voit » pas l'utilisateur au login
+     (400 invalid_credentials) alors que tous les autres colonnes sont
+     alignées. Complément des notes M3 ; l'admin M2 l'avait, d'où la
+     confusion possible.
+  2. Ne jamais forger un UUID de fixture en `00000000-…-00000000xxxx`
+     (version 0) : `zod` (v4, RFC 9562) le refuse dans les schémas D26 →
+     lecture PostgREST valide côté HTTP mais `DataError` « Invalid UUID »
+     côté client. Utiliser `gen_random_uuid()` (le premier essai de session a
+     déclenché ce cas, confirmé comme garde-fou D26 fonctionnel).
+- La photo de test reste dans le bucket `photos` (dossier du compte de test) :
+  le bucket n'a pas de policy DELETE (octets figés, D7) et `storage.objects`
+  refuse le delete SQL direct (trigger de protection) — à purger via le
+  dashboard ou service_role si un jour nécessaire. ~85 Ko.
+- **Compte membre de test conservé** : `m5-test@example.com` /
+  `M5test!verify` (rôle `membre`, UUID à régénérer mentalement — présent en
+  base) — prérequis « un compte admin et un compte membre » du milestone 6
+  déjà couvert. Mot de passe faible et communiqué en clair : à supprimer ou
+  changer après M6, ne touche pas l'historique réel (véhicule Dev).
+- Session suivante (M6) : le toggle `includeDeleted` et le filtre `userId` de
+  `ReadingFilters` (repo, M4) + `useAuth().isAdmin` sont les seules pièces
+  manquantes aux trois premières tâches ; l'UI est prête à les brancher
+  (HistoryPage centralise la lecture, AppShell montre déjà le rôle via
+  /compte).
 
 ## Milestone 6 — Admin & soft-delete
 
