@@ -12,8 +12,8 @@ session n'exécute qu'un seul milestone, le sien.
 2. Le milestone à exécuter = la première ligne du tableau de statut qui n'est
    pas ✅. Les tâches `[ ]` de sa section sont la checklist exhaustive de la
    session.
-3. Prérequis hors-repo du milestone (ligne « Prérequis produit » de sa
-   section) : s'ils manquent (ex. `.env.local` Supabase absent), demander à
+3. Prérequis hors-repo du milestone (ligne « Prérequis » de sa section) :
+   s'ils manquent (ex. `.env.local` Supabase absent), demander à
    l'utilisateur avant d'écrire du code qui en dépend.
 4. Terminer : `npm run build` et `npm run lint` au vert, chaque tâche `[x]`
    vérifiée par son critère (le code fait ce que la tâche annonce, testable
