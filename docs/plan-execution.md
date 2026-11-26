@@ -13,7 +13,7 @@ pièges, consignes pour la session suivante).
 | 4   | Cœur métier         | ✅ terminé        |
 | 5   | UI v1               | ✅ terminé        |
 | 6   | Admin & soft-delete | ✅ terminé        |
-| 7   | Offline / PWA       | ⬜ à venir        |
+| 7   | Offline / PWA       | ✅ terminé        |
 | 8   | CI & déploiement    | ✅ terminé        |
 
 ## Milestone 1 — Scaffold ✅
@@ -321,20 +321,84 @@ Notes :
   n'ont pas de sens hors-ligne : ignorer `includeDeleted`/`userId` dans la
   file.
 
-## Milestone 7 — Offline / PWA
+## Milestone 7 — Offline / PWA ✅
 
-- [ ] `vite-plugin-pwa` : manifeste, icônes, installabilité, offline shell
-- [ ] File IndexedDB (`pending` : km, date locale, blob photo, notes,
+- [x] `vite-plugin-pwa` : manifeste, icônes, installabilité, offline shell
+- [x] File IndexedDB (`pending` : km, date locale, blob photo, notes,
       essence)
-- [ ] Synchroniseur au retour en ligne ; D6 réévaluée à la synchro ; item en
+- [x] Synchroniseur au retour en ligne ; D6 réévaluée à la synchro ; item en
       échec → badge « en attente — conflit », éditable/abandonnable (D13)
-- [ ] Écran/indicateur « items en attente »
-- [ ] Test : coupure réseau simulée (DevTools offline) → saisie → réconnexion
+- [x] Écran/indicateur « items en attente »
+- [x] Test : coupure réseau simulée (DevTools offline) → saisie → réconnexion
       → synchro
 
 Prérequis : milestones 4-5 (la saisie en ligne existe).
 
-Notes : —
+Notes :
+
+- Architecture de la file : `lib/pendingStore.ts` (IndexedDB brut + cache
+  mémoire + abonnés — IndexedDB n'est pas supabase-js, la règle D10 des
+  repositories reste intacte) ; `hooks/usePendingQueue.ts` (binding React via
+  `useSyncExternalStore` + **moteur de synchro au niveau module**, garde
+  singleton : plusieurs instances montées partagent une boucle). La boucle
+  **relit la file à chaque tour** (pas un snapshot figé) — un item qui entre
+  pendant la synchro est attrapé, pas renvoyé à l'événement online suivant.
+- Sync reprenable en **trois étapes idempotentes** (insert → upload → attach)
+  avec reprise sur `insertedReadingId`/`uploadedPhotoPath` : une coupure entre
+  l'insertion et l'upload ne provoque JAMAIS de double insertion (esprit
+  D25/D7). Erreur réseau → l'item reste `pending` ; erreur déterministe
+  (D6, droits, véhicule) → badge « en attente — conflit » + message de la
+  base, éditable (re-synchro immédiate) ou abandonnable (confirmé — seule
+  sortie hors succès, D13).
+- Branche hors-ligne de `useReadings.addReading` : `!navigator.onLine` AVANT
+  insert, ou DataError `network` en plein vol → mise en file (photo compressée
+  localement d'abord, octets conformes au quota) et retour `{ ok: true,
+queued: true }`. **Un refus D6 du trigger ne file jamais** : la base est
+  vérité, l'utilisateur corrige son km (test figé). Le véhicule est résolu au
+  renvoi s'il était inconnu à la saisie (montage hors-ligne).
+- `seq` dans l'item : deux saisies dans la même milliseconde partagent le
+  `createdAt` ISO, et `getAll` IndexedDB trie par clé (UUID) — l'ordre
+  d'envoi est garanti par (createdAt, seq), sinon la course de tests est
+  aléatoire.
+- PWA : `vite-plugin-pwa` en `generateSW`/`autoUpdate`, `navigateFallback:
+index.html` (shell hors-ligne ; la DONNÉE n'est pas cachée — c'est la file
+  IndexedDB qui joue le rôle hors-ligne). Icônes générées par
+  `scripts/gen-icons.mjs` (encodeur PNG node/zlib + cadran dessiné en
+  géométrie de pixel — aucun binaire graphique à installer). Le plugin aligne
+  start_url/scope sur `BASE_PATH` : rien de spécial à faire pour Pages,
+  l'installabilité depuis le domaine https reste à vérifier en prod (M8 fait,
+  session suivante éventuelle).
+- Vérifié en réel (`vite preview` + browser, véhicule **Dev** activé puis
+  Honda restauré) : coupure simulée → saisie km+notes+photo → carte « relevé
+  mis en file », header « hors-ligne · 1 en attente », item avec aperçu local
+  de la photo ; reconnexion (événement `online`) → synchro automatique →
+  ligne en base avec `photo_path` posé, file vide, historique affiché. **Zéro
+  erreur console** ; precache 16 entrées dont index.html. Conflit prouvé par
+  course : relevé 90 000 injecté en base pendant que le formulaire était
+  ouvert (le client ne pouvait pas le connaître) → l'item renvoyé est refusé
+  par le trigger (n=0 en base) et porte le badge « en attente — conflit »
+  avec le message D6 ; l'édition (90 100) le resynchronise aussitôt.
+- Piège du test simulé : un toggle DevTools offline n'est pas programmable
+  depuis l'agent ; l'override du getter `navigator.onLine` + dispatch des
+  événements `offline`/`online` couvre exactement les mêmes chemins de code,
+  SAUF que les lectures réseau réussissent encore — ce qui a confirmé au
+  passage que le client D6 bloque la régression AVANT mise en file quand il
+  le peut (attendu : le client est l'UX, la base la vérité).
+- Fixtures restantes dans le véhicule **Dev** (sans effet sur l'historique
+  réel, Honda restauré) : 75 210 (avec photo dans le bucket, dossier
+  m5-test), 75 300, 90 000 (notes « course M7 »), 90 100. Le compte
+  `m5-test@example.com` reste utilisable ; le supprimer/changer après M7 si
+  plus rien ne dépend de lui (déjà différé par M5/M6).
+- Limite assumée (échelle D1) : l'écran de file vit sous `AppShell` donc
+  connecté — hors-ligne avec session expirée, on ne liste pas la file, mais
+  elle n'est pas perdue (IndexedDB est par origine, pas par session) et part
+  dès la reconnexion. Aucun test E2E DevTools réel dans la CI (pas de
+  service worker en vitest ; les chemins offline/conflict/reprise sont figés
+  par 17 tests unitaires de plus, 66 au total).
+- Session suivante : tous les milestones sont faits — reste la dette (réalignement
+  CLI des migrations avant premier usage, purge dashboard du bucket si un
+  jour nécessaire, mot de passe admin temporaire encore en place ?) et
+  l'installation réelle du PWA depuis Pages.
 
 ## Milestone 8 — CI & déploiement ✅
 
@@ -390,8 +454,8 @@ Notes :
   base ↔ client.
 - Cohérence D6 entre trigger SQL et hook client : le trigger est la source de
   vérité, le client ne fait que l'UX.
-- IndexedDB + photos : gérer le quota navigateur (nettoyer les items
-  synchronisés uniquement).
+- IndexedDB + photos : résolu au milestone 7 — un item sort de la file dès sa
+  synchronisation (les octets ne persistent qu'en cas de conflit en attente).
 - La whitelist d'emails Supabase s'applique aussi à OAuth Google — à tester
   explicitement au milestone 3.
 - Ne jamais embarquer la clé `service_role` dans le bundle (repo public).

@@ -1,6 +1,7 @@
 // Routes v1 : login public, tout le reste protégé dans le layout mobile
 // (milestone 5 : dashboard, historique, saisie ; compte = écran D8/M3).
 // Milestone 6 : /admin/vehicules, sous garde RequireAdmin (D8).
+// Milestone 7 : /en-attente, écran de la file hors-ligne (D13).
 // basename = BASE_URL pour que react-router fonctionne aussi sous le
 // sous-chemin GitHub Pages /<dépôt>/ (D17, notes milestone 8).
 import { BrowserRouter, Route, Routes } from 'react-router'
@@ -13,6 +14,7 @@ import { RequireAdmin } from '@/features/auth/RequireAdmin'
 import { RequireAuth } from '@/features/auth/RequireAuth'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { HistoryPage } from '@/features/history/HistoryPage'
+import { PendingPage } from '@/features/offline/PendingPage'
 import { AddReadingPage } from '@/features/readings/AddReadingPage'
 import { VehiclesAdminPage } from '@/features/vehicle/VehiclesAdminPage'
 
@@ -33,6 +35,7 @@ function App() {
             <Route index element={<DashboardPage />} />
             <Route path="saisie" element={<AddReadingPage />} />
             <Route path="historique" element={<HistoryPage />} />
+            <Route path="en-attente" element={<PendingPage />} />
             <Route path="compte" element={<AccountPage />} />
             <Route
               path="admin/vehicules"

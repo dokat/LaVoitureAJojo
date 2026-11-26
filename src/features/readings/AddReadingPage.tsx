@@ -39,7 +39,9 @@ export function AddReadingPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [photoWarning, setPhotoWarning] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState<{ km: number } | null>(null)
+  const [saved, setSaved] = useState<{ km: number; queued: boolean } | null>(
+    null,
+  )
 
   const previewUrl = useMemo(
     () => (photo ? URL.createObjectURL(photo) : null),
@@ -65,7 +67,9 @@ export function AddReadingPage() {
         <CardHeader>
           <CardTitle>Relevé enregistré</CardTitle>
           <CardDescription>
-            {formatKm(saved.km)} km ajoutés à l’historique.
+            {saved.queued
+              ? `${formatKm(saved.km)} km mis en file : hors-ligne, la synchronisation partira au retour du réseau (file visible dans « En attente »).`
+              : `${formatKm(saved.km)} km ajoutés à l’historique.`}
           </CardDescription>
         </CardHeader>
         {photoWarning && (
@@ -127,6 +131,11 @@ export function AddReadingPage() {
     })
     setSaving(false)
     if (result.ok) {
+      if ('queued' in result) {
+        // D13 : pas de réseau — la saisie attend dans la file IndexedDB.
+        setSaved({ km: candidateKm, queued: true })
+        return
+      }
       // D25 : le relevé est en base même si les octets de la photo n'ont pas
       // suivi — on le dit à l'utilisateur, rien n'est perdu en silence.
       setPhotoWarning(
@@ -134,7 +143,7 @@ export function AddReadingPage() {
           ? `Relevé enregistré, mais la photo n’a pas pu être envoyée : ${result.photoError.message}`
           : null,
       )
-      setSaved({ km: result.reading.km })
+      setSaved({ km: result.reading.km, queued: false })
     } else {
       setFormError(result.error.message)
     }

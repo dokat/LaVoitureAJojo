@@ -2,11 +2,14 @@
 // filtres admin M6 : suppressions incluses, par utilisateur), ajout (avec
 // photo compressée puis uploadée), soft-delete et restauration. Orchestration
 // seule — les règles vivent dans les repositories (base) et validateOdometer
-// (UX).
+// (UX). Milestone 7 : une saisie sans réseau (ou dont l'insertion échoue sur
+// erreur réseau) file dans la file d'attente IndexedDB (D13, usePendingQueue
+// la renverra) ; le trigger D6 garde la vérité au renvoi.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import type { OdometerPoint } from '@/hooks/useOdometerValidation'
 import { compressPhoto, ImageError } from '@/lib/images'
+import * as pendingStore from '@/lib/pendingStore'
 import * as kilometersRepository from '@/repositories/kilometersRepository'
 import * as photosRepository from '@/repositories/photosRepository'
 import * as vehiclesRepository from '@/repositories/vehiclesRepository'
@@ -35,6 +38,8 @@ export type AddReadingInput = {
 
 export type AddReadingResult =
   | { ok: true; reading: Reading; photoError?: DataError }
+  /** Saisie hors-ligne (D13) : l'item est dans la file IndexedDB, pas en base. */
+  | { ok: true; queued: true }
   | { ok: false; error: DataError }
 
 /** ImageError (pré-traitement local) et erreurs base convergent vers DataError. */
@@ -101,19 +106,47 @@ export function useReadings(options: UseReadingsOptions = {}) {
 
   const addReading = useCallback(
     async (input: AddReadingInput): Promise<AddReadingResult> => {
-      if (!user || !vehicle) {
+      if (!user) {
         return {
           ok: false,
           error: new DataError(
             'not_found',
-            'Session ou véhicule indisponible — rechargez la page.',
+            'Session indisponible — rechargez.',
           ),
         }
       }
+      // En file, le véhicule est résolu à l'envoi s'il est inconnu ici (app
+      // montée hors-ligne) — le synchroniseur reprendra le véhicule actif.
+      const enqueue = (photoBlob: Blob | null) =>
+        pendingStore.add({
+          vehicleId: vehicle?.id ?? null,
+          userId: user.id,
+          km: input.km,
+          readingAt: input.readingAt.toISOString(),
+          fuelPercent: input.fuelPercent ?? null,
+          notes: input.notes ?? null,
+          photo: photoBlob,
+        })
+      let photo: Awaited<ReturnType<typeof compressPhoto>> | null = null
       try {
-        const photo = input.photo ? await compressPhoto(input.photo) : null
+        // Compression locale d'abord : elle fonctionne sans réseau (D16) et
+        // la file ne garde que des octets conformes au quota.
+        photo = input.photo ? await compressPhoto(input.photo) : null
+        if (!navigator.onLine) {
+          await enqueue(photo?.blob ?? null)
+          return { ok: true, queued: true }
+        }
+        // Véhicule inconnu alors qu'on est en ligne (montage en échec réseau
+        // antérieur) : relecture franche plutôt qu'une insertion impossible.
+        const active = vehicle ?? (await vehiclesRepository.getActiveVehicle())
+        if (!active) {
+          throw new DataError(
+            'not_found',
+            'Aucun véhicule actif — l\u2019administrateur doit en activer un.',
+          )
+        }
         const reading = await kilometersRepository.insertReading({
-          vehicleId: vehicle.id,
+          vehicleId: active.id,
           userId: user.id,
           km: input.km,
           readingAt: input.readingAt,
@@ -144,7 +177,16 @@ export function useReadings(options: UseReadingsOptions = {}) {
         await fetchAndApply()
         return { ok: true, reading }
       } catch (caught) {
-        return { ok: false, error: describe(caught) }
+        const failure = describe(caught)
+        // Le réseau a lâché en cours de route (onLine optimiste, coupure en
+        // plein vol) : la saisie va en file, elle partira à la synchro (D13).
+        // km_regression et les erreurs déterministes ne passent JAMAIS ici —
+        // le trigger reste la vérité, l'utilisateur corrige son km.
+        if (failure.code === 'network') {
+          await enqueue(photo?.blob ?? null)
+          return { ok: true, queued: true }
+        }
+        return { ok: false, error: failure }
       }
     },
     [user, vehicle, fetchAndApply],

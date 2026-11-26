@@ -42,6 +42,11 @@ export function AccountPage() {
           </CardFooter>
         )}
         <CardFooter>
+          <Button asChild variant="outline" className="w-full">
+            <Link to="/en-attente">Items en attente de synchronisation</Link>
+          </Button>
+        </CardFooter>
+        <CardFooter>
           <Button
             type="button"
             variant="outline"

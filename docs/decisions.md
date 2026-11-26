@@ -311,3 +311,18 @@ Restauration (admin) = `deleted_at → NULL` + `restored_at = now()` ; `deleted_
 lignes « taguées », pas d'un nettoyage des tags). Le recontrôle D6 à la
 restauration (D18) est le trigger existant — aucune écriture SQL nouvelle côté
 kilomètres.
+
+## 12. Clarifications d'implémentation (2026-11-26, session milestone 7)
+
+### D29 — Renvoi de la file : trois étapes reprenables, jamais de doublon
+
+Un item hors-ligne se synchronise en étapes idempotentes — insertion SQL, puis
+upload des octets (`{user_id}/{reading_id}.jpg`, D16), puis collage de
+`photo_path` — l'item portant `insertedReadingId`/`uploadedPhotoPath` pour que
+la reprise après une coupure en plein envoi **ne réinsère jamais** (cohérent
+avec D25 : le relevé existe ou n'existe pas, jamais deux fois). Erreur réseau
+⇒ l'item reste `pending` (nouvel essai au prochain online) ; erreur
+déterministe (D6, droits, véhicule actif absent) ⇒ `conflict` avec le message
+de la base, éditable ou abandonnable (D13). Une régression D6 détectée par le
+client avant envoi **ne met jamais en file** : elle est refusée comme en ligne
+— la file n'accepte que l'incertitude du réseau, pas l'oubli de la chronologie.

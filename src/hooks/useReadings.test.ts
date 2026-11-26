@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // Orchestration du hook : ordre insert → upload → attach, erreurs typées qui
-// remontent, fraîcheur de la liste. Les repositories sont mockés — les règles
-// base ont leurs tests SQL (M2), la pureté D6/canvas a les siens (M4).
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+// remontent, fraîcheur de la liste, mise en file hors-ligne (M7). Les
+// repositories sont mockés — les règles base ont leurs tests SQL (M2), la
+// pureté D6/canvas a les siennes (M4).
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 
 const mocks = vi.hoisted(() => ({
@@ -14,10 +15,14 @@ const mocks = vi.hoisted(() => ({
   restoreReading: vi.fn(),
   uploadPhoto: vi.fn(),
   compressPhoto: vi.fn(),
+  pendingAdd: vi.fn(),
 }))
 
 vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'test@example.com' } }),
+}))
+vi.mock('@/lib/pendingStore', () => ({
+  add: mocks.pendingAdd,
 }))
 vi.mock('@/repositories/vehiclesRepository', () => ({
   getActiveVehicle: mocks.getActiveVehicle,
@@ -74,7 +79,20 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.getActiveVehicle.mockResolvedValue(vehicle)
   mocks.listReadings.mockResolvedValue([reading()])
+  mocks.pendingAdd.mockResolvedValue({ id: 'p1' })
+  setOnline(true)
 })
+
+afterEach(() => {
+  setOnline(true)
+})
+
+function setOnline(value: boolean): void {
+  Object.defineProperty(window.navigator, 'onLine', {
+    configurable: true,
+    get: () => value,
+  })
+}
 
 async function mounted() {
   const view = renderHook(() => useReadings())
@@ -153,7 +171,8 @@ describe('useReadings — addReading', () => {
     expect(mocks.uploadPhoto).toHaveBeenCalledWith('u1', 'r2', blob)
     expect(mocks.attachPhoto).toHaveBeenCalledWith('r2', 'u1/r2.jpg')
     expect(outcome).toMatchObject({ ok: true, reading: { id: 'r2' } })
-    if (outcome.ok) expect(outcome.reading.photoPath).toBe('u1/r2.jpg')
+    if (outcome.ok && 'reading' in outcome)
+      expect(outcome.reading.photoPath).toBe('u1/r2.jpg')
   })
 
   it('refus SQL D6 : ok=false avec DataError km_regression, rien n\u2019est uploadé', async () => {
@@ -311,5 +330,86 @@ describe('useReadings — restore (admin, D7/D18)', () => {
     // Le trigger a annulé l'update : la base n'a pas bougé, on ne prétend
     // rien sans relecture — la liste affichée reste celle d'avant.
     expect(result.current.readings).toHaveLength(1)
+  })
+})
+
+describe('useReadings — hors-ligne (M7, D13)', () => {
+  it('navigateur hors-ligne : mise en file, aucune insertion tentée', async () => {
+    const { result } = await mounted()
+    setOnline(false)
+    const outcome = await act(async () =>
+      result.current.addReading({
+        km: 50100,
+        readingAt: new Date('2026-11-26T08:00:00Z'),
+      }),
+    )
+    expect(outcome).toEqual({ ok: true, queued: true })
+    expect(mocks.insertReading).not.toHaveBeenCalled()
+    expect(mocks.pendingAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        km: 50100,
+        vehicleId: 'v1',
+        userId: 'u1',
+        photo: null,
+      }),
+    )
+  })
+
+  it('réseau lâché en plein vol : la saisie file au lieu d’échouer', async () => {
+    const { result } = await mounted()
+    mocks.insertReading.mockRejectedValue(
+      new DataError('network', 'Connexion au serveur impossible.'),
+    )
+    const outcome = await act(async () =>
+      result.current.addReading({
+        km: 50100,
+        readingAt: new Date('2026-11-26T08:00:00Z'),
+      }),
+    )
+    expect(outcome).toEqual({ ok: true, queued: true })
+    expect(mocks.pendingAdd).toHaveBeenCalledTimes(1)
+  })
+
+  it('la photo est compressée AVANT mise en file (octets conformes, hors-ligne)', async () => {
+    const { result } = await mounted()
+    setOnline(false)
+    const jpeg = new Blob(['jpeg'], { type: 'image/jpeg' })
+    mocks.compressPhoto.mockResolvedValue({
+      blob: jpeg,
+      width: 1600,
+      height: 1200,
+    })
+
+    const outcome = await act(async () =>
+      result.current.addReading({
+        km: 50100,
+        readingAt: new Date('2026-11-26T08:00:00Z'),
+        photo: new Blob(['raw']),
+      }),
+    )
+
+    expect(outcome).toEqual({ ok: true, queued: true })
+    expect(mocks.compressPhoto).toHaveBeenCalledTimes(1)
+    expect(mocks.pendingAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ photo: jpeg }),
+    )
+  })
+
+  it('conflit D6 de la base : refusé, JAMAIS mis en file (la base est vérité)', async () => {
+    const { result } = await mounted()
+    mocks.insertReading.mockRejectedValue(
+      new DataError('km_regression', 'KM_REGRESSION: …'),
+    )
+    const outcome = await act(async () =>
+      result.current.addReading({
+        km: 40000,
+        readingAt: new Date('2026-11-26T08:00:00Z'),
+      }),
+    )
+    expect(outcome).toMatchObject({
+      ok: false,
+      error: { code: 'km_regression' },
+    })
+    expect(mocks.pendingAdd).not.toHaveBeenCalled()
   })
 })
