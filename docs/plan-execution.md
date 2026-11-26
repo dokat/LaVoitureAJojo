@@ -10,7 +10,7 @@ pièges, consignes pour la session suivante).
 | 1   | Scaffold            | ✅ terminé        |
 | 2   | Schéma & RLS        | ✅ terminé        |
 | 3   | Authentification    | 🟡 test manuel dû |
-| 4   | Cœur métier         | ⬜ à venir        |
+| 4   | Cœur métier         | ✅ terminé        |
 | 5   | UI v1               | ⬜ à venir        |
 | 6   | Admin & soft-delete | ⬜ à venir        |
 | 7   | Offline / PWA       | ⬜ à venir        |
@@ -143,19 +143,56 @@ Notes :
   `react-router-dom`) ; `basename={import.meta.env.BASE_URL}` aligne le
   routage sur le base path Pages (D17).
 
-## Milestone 4 — Cœur métier
+## Milestone 4 — Cœur métier ✅
 
-- [ ] `vehiclesRepository`, `kilometersRepository`, `profilesRepository`
-- [ ] Compression client des photos (canvas ~1600 px / JPEG 80 %, EXIF
+- [x] `vehiclesRepository`, `kilometersRepository`, `profilesRepository`
+- [x] Compression client des photos (canvas ~1600 px / JPEG 80 %, EXIF
       stripped, garde-fou 10 Mo) dans `lib/images.ts` + test unitaire
-- [ ] Hook `useOdometerValidation` (règle D6 côté client, messages clairs) +
+- [x] Hook `useOdometerValidation` (règle D6 côté client, messages clairs) +
       test
-- [ ] Hook `useReadings` (liste, ajout avec upload photo, soft-delete)
-- [ ] Types du domaine dans `src/types/`
+- [x] Hook `useReadings` (liste, ajout avec upload photo, soft-delete)
+- [x] Types du domaine dans `src/types/`
 
 Prérequis : milestone 3 (un utilisateur authentifié pour tester).
 
-Notes : —
+Notes :
+
+- Écart de protocole assumé : exécuté sur demande explicite alors que la
+  tâche manuelle du milestone 3 (test whitelist Google, bloquée par la
+  config dashboard) restait due — sans impact ici, rien dans M4 ne dépend
+  d'OAuth.
+- Couches ajoutées au-delà de la lettre des tâches : `repositories/errors.ts`
+  (`DataError` : `km_regression`, `km_immutable`, `permission`, `not_found`,
+  `network`, `photo_upload`, `unknown` — les marqueurs des triggers sont
+  reconnus par le message, code SQL P0001) et `repositories/photosRepository`
+  (storage, que le README de couche listait déjà comme module propre).
+  `ProfileRole` a glissé dans `types/domain.ts` ; `authRepository` le
+  ré-exporte, aucun appelant changé (suite logique de D22).
+- `useReadings` : montage via `fetchAndApply` ; `addReading` sans photo = insert seul ; avec photo =
+  compress → insert → upload `{user_id}/{reading_id}.jpg` → attach
+  (échec d'upload ⇒ D25) ; `softDelete` retire de la liste sans jamais
+  toucher les octets (D7). `lastReading` dérivé du tri de récence, branché
+  sur `useOdometerValidation`.
+- D6 client figée par tests (cas du contrat : premier relevé, supériorité à
+  date ancienne, **égalité acceptée**, rétro-saisie, même instant refusé,
+  futur refusé) ; la logique pure `validateOdometer` est exportée pour être
+  testable sans React. Le trigger SQL reste la vérité — le client peut
+  échouer à dire non (course), la base ne laisse pas passer.
+- `lib/images.ts` : OffscreenCanvas + repli DOM ; garde 10 Mo **avant**
+  décodage et après encodage ; `computeScaledSize` ne grandit jamais et ne
+  réduit jamais à 0 px. Tests avec canvas stubbé (le node de vitest n'a pas
+  d'écran).
+- 27 tests (3 fichiers) ; `npm test` ajouté aux scripts et à la CI (D23).
+  Le client est désormais typé par `src/types/supabase.ts` généré depuis la
+  base (D24) ; les conversions `as unknown as` des repositories ont disparu.
+- Lint : un seul warning reste, préexistant (`button.tsx`, shadcn). Le
+  `react/set-state-in-effect` de `useReadings` est désactivé localement avec
+  justification (le fetch de montage est le pattern visé, pas une cascade
+  synchrone).
+- Session suivante (M5) : `getSignedUrl` est prêt pour la photo cliquable ;
+  `ReadingFilters` (`includeDeleted`, `userId`) est prêt pour le toggle et
+  le filtre admin (M6) ; le formulaire pré-remplit `readingAt` à « maintenant »
+  et passe par `useOdometerValidation` avant `addReading` (D14).
 
 ## Milestone 5 — UI v1
 
@@ -247,6 +284,9 @@ Notes :
 
 ## Dette / points de vigilance
 
+- Régénérer `src/types/supabase.ts` (`supabase gen types typescript`) après
+  chaque migration (D24) : sinon le typecheck ne protège plus le contrat
+  base ↔ client.
 - Cohérence D6 entre trigger SQL et hook client : le trigger est la source de
   vérité, le client ne fait que l'UX.
 - IndexedDB + photos : gérer le quota navigateur (nettoyer les items

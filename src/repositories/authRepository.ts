@@ -2,15 +2,15 @@
 // GoTrue sont converties en AuthError typées ; les hooks/UI n'importent
 // jamais supabase-js directement.
 import { supabase } from '@/lib/supabase'
+import { dbProfileRoleSchema } from '@/schemas/profiles'
+import type { ProfileRole } from '@/schemas/profiles'
+
+export type { ProfileRole }
 
 export type AuthUser = {
   id: string
   email: string | null
 }
-
-/** Rôle applicatif, source de vérité : public.profiles (D8 — le JWT ne le
- * porte pas, cf. migration profiles). */
-export type ProfileRole = 'admin' | 'membre'
 
 export type AuthErrorCode =
   'invalid_credentials' | 'email_not_confirmed' | 'rate_limited' | 'unknown'
@@ -110,7 +110,8 @@ export async function signOut(): Promise<void> {
 }
 
 /** Rôle depuis public.profiles, jamais depuis le JWT (milestone 3).
- * profil absent ⇒ « membre » : on ne promeut jamais par défaut. */
+ * profil absent ⇒ « membre » : on ne promeut jamais par défaut (règle D8,
+ * figée dans dbProfileRoleSchema). */
 export async function fetchProfileRole(userId: string): Promise<ProfileRole> {
   const { data, error } = await supabase
     .from('profiles')
@@ -118,5 +119,5 @@ export async function fetchProfileRole(userId: string): Promise<ProfileRole> {
     .eq('id', userId)
     .maybeSingle()
   if (error) throw toAuthError(error)
-  return data?.role === 'admin' ? 'admin' : 'membre'
+  return data ? dbProfileRoleSchema.parse(data.role) : 'membre'
 }

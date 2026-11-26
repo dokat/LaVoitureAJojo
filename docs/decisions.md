@@ -224,3 +224,62 @@ sa définition — accès généraux aux profils (afficher des utilisateurs, etc
 Le rôle n'est **jamais** lu depuis le JWT (il ne le porte pas, cf. commentaire
 de la migration `profiles`) ; défaut prudent : profil absent ou erreur de
 lecture ⇒ `membre`.
+
+## 10. Clarifications d'implémentation (2026-11-26, session milestone 4)
+
+### D23 — Test unitaire : vitest, local-only, branché dans la CI
+
+Les tâches « test unitaire » du milestone 4 n'avaient pas de framework choisi
+(M1 avait livré lint + format, pas de test). Décision : **vitest**
+(config `vitest.config.ts`, alias `@/` partagé avec Vite), environnement
+`node` par défaut, `jsdom` + `@testing-library/react` uniquement pour les
+hooks (`renderHook`). Aucun test n'atteint Supabase : les gardes base
+(D6/D7/RLS) restent prouvées par les scripts SQL de M2 ; côté client, les
+repositories sont mockés à leur frontière. Le workflow Pages lance
+`npm run test` entre lint et build.
+
+### D24 — Les types générés gouvernent le client Supabase
+
+`src/types/supabase.ts` (généré depuis le projet réel par
+`supabase gen types`, posée en session M4) paramètre
+`createClient<Database>` : les repositories reçoivent des lignes PostgREST
+typées et les convertissent en types du domaine (`src/types/`). Le fichier
+n'est pas de la dette vivante : **à régénérer après chaque migration**, sinon
+le typecheck ne protège plus rien.
+
+### D25 — Échec d'upload photo après insert : relevé conservé, `photoError`
+
+Le chemin D16 (nom d'objet = id du relevé) oblige à insérer **avant**
+d'uploader. Si l'insertion réussit mais que l'upload/attach échoue : le
+relevé est gardé (visible, sans photo), la liste est rechargée depuis le
+serveur et `addReading` retourne `{ ok: true, photoError }` — jamais de
+réinsertion, jamais de perte silencieuse (esprit D7/D13). L'UI du milestone 5
+doit afficher ce message.
+
+### D26 — Zod source de vérité des types du domaine (26/11/2026)
+
+À la demande de l'utilisateur, en amont du milestone 3 : les types échangés
+par les hooks et les signatures de repositories (`Vehicle`, `Reading`,
+`Profile`, `ProfileRole`) sont désormais **inférés de schémas zod**
+(`src/schemas/`, un fichier par agrégat).
+Chaque schéma décrit la ligne PostgREST (snake_case, `timestamptz` en ISO) et
+se transforme lui-même en forme domaine (`Date`, camelCase) ; les repositories
+font `schema.parse(row)` — le mapping manuel disparaît. Les types du domaine
+sont les `z.output` des schémas, importés en `import type` directement depuis
+`src/schemas/` par les hooks et composants : `src/types/domain.ts`, qui n'était
+plus qu'un pôle de ré-export, est supprimé (le dossier `types/` ne garde que
+le fichier généré, D24).
+
+- **D24 est amendée, pas contredite** : `src/types/supabase.ts` reste généré
+  et paramètre `createClient` (noms de colonnes des requêtes) ; le zod ajoute
+  la validation de forme à la frontière, avec un contrôle de type anti-dérive
+  (`Exclude<…, keyof Row>`) qui interdit à un schéma de citer une colonne
+  absente du type généré. Une ligne hors schéma lève un `ZodError` converti
+  en `DataError` (lecture, jamais insert).
+- La règle D8 « jamais de promotion par défaut » est figée par
+  `dbProfileRoleSchema` (`.catch('membre')`), utilisée par
+  `profilesRepository` **et** `authRepository.fetchProfileRole`.
+- Les bornes zod reflètent les check SQL (`km >= 0`, fuel 0–100, rôle) : le
+  client ne réinvente rien, il vérifie ce que la base garantit.
+- Les règles métier (D6, D7, D19) restent gardées en base ; zod ne valide
+  que la forme, pas la chronologie.
