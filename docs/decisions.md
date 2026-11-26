@@ -1,0 +1,169 @@
+# Décisions de design — LaVoitureAJojo
+
+Arbre des décisions validé avec le produit le 2026-11-26 (session de
+grillage). Chaque nœud : la question, la décision prise, le pourquoi, ce que
+ça débloque. Toute modification ultérieure doit ajouter une entrée ici (avec
+date) plutôt qu'éditer silencieusement une entrée existante.
+
+## 1. Cadre produit
+
+### D1 — Public cible et échelle
+
+App familiale/covoiturage proche : 10-20 utilisateurs maximum, plan **gratuit**
+Supabase. Inscription verrouillée par whitelist d'emails (cf. D15).
+
+### D2 — Modèle véhicule
+
+**Une seule voiture partagée par tous les utilisateurs** (covoiturage
+familial) : tout le monde alimente le même historique de kilométrage. Pas de
+notion de « véhicule de l'utilisateur ». Débloque : RLS ouverte en écriture à
+tout utilisateur authentifié, et rend la règle anti-recul (D6) cruciale —
+deux personnes peuvent saisir dans le désordre.
+
+### D3 — Environnements
+
+**Un seul projet Supabase** pour la prod et le dev. Le dev passe par un
+**véhicule de test** supplémentaire dans la table `vehicles`, que l'admin
+active/désactive. Choix assumé : promiscuité dev/prod en échange d'une seule
+config à payer et à maintenir.
+
+## 2. Fonctionnalités v1
+
+### D4 — Périmètre v1
+
+- Dashboard : dernier kilométrage + graphique d'évolution (Recharts).
+- Historique : liste chronologique des saisies.
+- Formulaire de saisie.
+
+Export CSV, alertes « pas de saisie depuis X jours », purgeur de photos
+orphelines : v2.
+
+### D5 — Champs d'une saisie
+
+Kilométrage (km), date/heure du relevé, photo (optionnelle), notes
+(optionnelles), **niveau d'essence en % (optionnel)**. Pas de GPS.
+
+### D6 — Règle anti-recul du compteur
+
+Comparaison à la saisie la plus récente par date :
+
+- `km saisi ≥ km dernier` : accepté.
+- `km saisi < km dernier` : accepté **seulement si** `date saisie` est
+  **strictement inférieure** à la date de la dernière saisie.
+
+Donc : rétro-saisie d'un relevé oublié = OK ; « remettre le compteur à
+l'heure » vers le bas = interdit. Égalité de km acceptée ; deux saisies le
+même jour avec km inférieur = refusée. Contrôlé en base (trigger SQL,
+milestone 2) et dans l'UI (message explicite).
+
+### D7 — Immutabilité et suppression douce
+
+Pas d'édition du kilométrage : erreur = suppression puis ressaisie. La
+suppression est **douce** : la ligne reste en base, taguée (`deleted_at`,
+`deleted_by`, `restored_at`). Les saisies supprimées sont invisibles par
+défaut (historique et graphique). Toggle « voir les suppressions » et
+restauration réservés à l'admin. Rien n'est jamais purgé physiquement en v1 —
+les photos suivent le même sort : une suppression douce ne supprime aucun
+octet en storage.
+
+### D8 — Rôles et permissions
+
+- **Membre** : voit tout l'historique du véhicule actif, ajoute des saisies,
+  soft-supprime **les siennes**.
+- **Admin** : tout membre + soft-supprime les saisies d'autrui, restaure,
+  édite les infos du véhicule (marque, modèle, plaque), **seul à basculer le
+  véhicule actif** (vraie voiture / véhicule de dev), dispose du filtre « par
+  utilisateur » dans l'historique.
+- Promotion admin : à la main en base (`profiles.role`), pas d'écran de
+  gestion de comptes en v1. Whitelist d'emails : dashboard Supabase, pas
+  d'écran in-app.
+
+## 3. Technique
+
+### D9 — Stack
+
+SPA **Vite + React + TypeScript** + **Tailwind CSS 4** + **shadcn/ui** +
+**@supabase/supabase-js**. Pas de Next.js : Supabase fournit l'auth, la BDD et
+le storage.
+
+### D10 — Architecture interne (bonnes pratiques)
+
+- Petits composants composables ; `components/ui` = briques shadcn générées.
+- **Hooks pour la logique métier** (`useAuth`, `useReadings`,
+  `useOdometerValidation`, `usePendingQueue`…).
+- **Repositories pour les accès base** : seule couche qui importe
+  supabase-js pour les données ; les erreurs sont converties en erreurs
+  typées.
+- Découpage par feature (`features/auth`, `features/readings`…).
+- Lint : oxlint (fourni par le template Vite) ; format : Prettier.
+
+### D11 — Mobile-first
+
+Saisie principalement au bord de la voiture depuis un smartphone : design
+mobile-first + bouton caméra direct (`<input capture>`). PC utilisable pour
+l'historique.
+
+### D12 — Graphiques
+
+Recharts via le package chart de shadcn/ui.
+
+### D13 — PWA / hors-ligne
+
+**PWA installable** avec **saisie hors-ligne réelle** : file d'attente
+IndexedDB (km, date locale, photo, méta) + synchronisation au retour du
+réseau. La règle D6 est réévaluée à la synchro ; l'item hors-ligne, daté au
+moment de la manipulation utilisateur (cf. D14), se réinsère rétroactivement
+dans la chronologie. Si la validation échoue quand même : l'item reste en
+file avec un badge « en attente — conflit », éditable ou abandonnable.
+**Jamais de suppression silencieuse d'une donnée locale.**
+
+### D14 — Sémantique de la date d'une saisie
+
+`reading_at` = **moment où l'utilisateur fait la manipulation dans l'app**
+— pas l'insertion en base, qui peut être différée par le mode hors-ligne.
+Pré-remplit à « maintenant », éditable (relevé fait plus tôt dans la
+journée). Les comparaisons de D6 utilisent cette date.
+
+### D15 — Authentification
+
+Email + mot de passe **et** OAuth Google, réinitialisation par email.
+**Whitelist d'emails** dans la config Supabase Auth : toute inscription hors
+liste est refusée, y compris via un compte Google valide (sinon la RLS
+partagée exposerait l'historique à n'importe qui).
+
+## 4. Photos & storage
+
+### D16 — Bucket et traitement client
+
+Bucket **privé** : lecture par utilisateurs authentifiés (signed URLs),
+écriture par l'auteur. **Compression côté client avant upload** : ~1600 px de
+large, JPEG qualité ~80 % (≈ 300-500 Ko par photo), réencodage qui strippe les
+EXIF (et donc tout GPS éventuel). Fichier brut > 10 Mo refusé à l'upload.
+Quota gratuit ≈ 1 Go = ~2 000-3 000 photos.
+
+## 5. Hébergement & CI
+
+### D17 — GitHub Pages
+
+Dépôt **public** (exigence Pages gratuit — acceptable : seules l'URL Supabase
+et la clé _anon_, publiques par conception, y figurent ; la clé service_role
+ne quitte jamais la configuration serveur de Supabase). Build Vite +
+publication par **GitHub Actions** à chaque push sur `main`, env vars en
+Secrets GitHub.
+
+## 6. Modèle de données (schéma cible)
+
+```
+profiles   (id → auth.users, role 'admin' | 'membre')
+vehicles   (id, brand, model, plate, is_active)   -- inclut le véhicule de dev
+kilometers (id, vehicle_id → vehicles, user_id → profiles,
+            km integer, fuel_percent integer null, photo_path text null,
+            notes text null, reading_at timestamptz,
+            deleted_at timestamptz null, deleted_by uuid null,
+            restored_at timestamptz null,
+            created_at timestamptz default now())
+```
+
+Policies RLS cible : SELECT pour tout authentifié ; INSERT pour tout
+authentifié (sur le véhicule actif, avec trigger de contrôle D6) ;
+soft-delete par l'auteur ou un admin ; restauration par admin seulement.
