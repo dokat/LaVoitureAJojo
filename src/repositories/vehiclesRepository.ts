@@ -1,7 +1,7 @@
 // Vehicles : flotte = véhicule réel + véhicule de dev, un seul actif (D2/D3).
-// La bascule d'activation et l'édition des infos sont admin (D8) et viendront
-// avec le milestone 6 ; ici seules les lectures utiles au cœur métier. La
-// conversion des lignes est la compétence du schéma zod (D26).
+// Lecture pour tous ; bascule d'activation et édition des infos sont admin
+// (D8, milestone 6) — la policy RLS « vehicules editables par admin » garde
+// la vérité. La conversion des lignes est la compétence du schéma zod (D26).
 import { supabase } from '@/lib/supabase'
 import { toDataError } from '@/repositories/errors'
 import {
@@ -35,4 +35,42 @@ export async function getActiveVehicle(): Promise<Vehicle | null> {
     .maybeSingle()
   if (error) throw toDataError(error)
   return data ? toVehicle(data) : null
+}
+
+/**
+ * Bascule du véhicule actif (D8, admin). Deux écritures séquentielles :
+ * désactiver les autres d'abord — l'index partiel unique
+ * vehicles_one_active_at_a_time interdirait d'activer la cible tant qu'un
+ * autre est actif. Fenêtre « aucun actif » de quelques millisecondes entre
+ * les deux : sans impact à l'échelle D1, le trigger SQL garde la cohérence.
+ * Retourne la flotte rechargée pour que l'UI affiche l'état de la base.
+ */
+export async function setActiveVehicle(vehicleId: string): Promise<Vehicle[]> {
+  const { error: deactivate } = await supabase
+    .from('vehicles')
+    .update({ is_active: false })
+    .neq('id', vehicleId)
+    .eq('is_active', true)
+  if (deactivate) throw toDataError(deactivate)
+  const { error: activate } = await supabase
+    .from('vehicles')
+    .update({ is_active: true })
+    .eq('id', vehicleId)
+  if (activate) throw toDataError(activate)
+  return listVehicles()
+}
+
+/** Édition des infos d'un véhicule (D8, admin) : marque, modèle, plaque. */
+export async function updateVehicleInfo(
+  vehicleId: string,
+  info: { brand: string; model: string; plate: string },
+): Promise<Vehicle> {
+  const { data, error } = await supabase
+    .from('vehicles')
+    .update({ brand: info.brand, model: info.model, plate: info.plate })
+    .eq('id', vehicleId)
+    .select('id, brand, model, plate, is_active')
+    .single()
+  if (error) throw toDataError(error)
+  return toVehicle(data)
 }

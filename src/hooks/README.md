@@ -1,8 +1,9 @@
 # hooks/
 
-Logique métier réutilisable : `useAuth`, `useReadings`,
-`useOdometerValidation` (règle anti-recul), `usePendingQueue` (file hors-ligne),
-`useVehicle`…
+Logique métier réutilisable : `useAuth`, `useReadings` (chronologie + filtres
+admin), `useOdometerValidation` (règle anti-recul), `useVehicles` (flotte,
+bascule et infos — admin), `useProfiles` (libellés utilisateurs),
+`usePhotoUrl`, `usePendingQueue` (file hors-ligne)…
 
 Règles :
 

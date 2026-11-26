@@ -283,3 +283,31 @@ le fichier généré, D24).
   client ne réinvente rien, il vérifie ce que la base garantit.
 - Les règles métier (D6, D7, D19) restent gardées en base ; zod ne valide
   que la forme, pas la chronologie.
+
+## 11. Clarifications d'implémentation (2026-11-26, session milestone 6)
+
+### D27 — `profiles.email` : colonne copiée depuis auth.users pour les libellés
+
+Le filtre historique « par utilisateur » (D8) et l'auteur affiché exigent
+d'identifier les utilisateurs autrement que par un UUID. `auth.users.email`
+n'est pas exposé aux clients (schéma `auth` hors PostgREST) et le modèle §6 ne
+prévoyait rien : la table `profiles` gagne donc une colonne `email` (nullable),
+synchronisée depuis `auth.users` par trigger `on_auth_user_email_synced`
+(AFTER INSERT OR UPDATE OF email ; `sync_profile_email()` SECURITY DEFINER,
+durcie comme `handle_new_user()` — pas d'EXECUTE public), plus un backfill.
+
+- **Vie privée assumée** : la policy existante « profils lisibles par tout
+  authentifié » rend ces emails visibles de tout membre du cercle (whitelist,
+  10-20 personnes, D1) — cohérent avec D8 où tout membre voit déjà les saisies
+  nominatives de tous. Aucun nouveau droit d'écriture.
+- Le modèle §6 devient : `profiles (id → auth.users, role, email)`.
+- Les régénérations de types (D24) et le schéma zod (D26) suivent : `Profile`
+  porte `email: string | null`.
+
+### D28 — Trace d'audit conservée à la restauration
+
+Restauration (admin) = `deleted_at → NULL` + `restored_at = now()` ; `deleted_by`
+**n'est pas effacé** : il reste la trace de qui avait supprimé (D7 parle de
+lignes « taguées », pas d'un nettoyage des tags). Le recontrôle D6 à la
+restauration (D18) est le trigger existant — aucune écriture SQL nouvelle côté
+kilomètres.

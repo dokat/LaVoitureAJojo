@@ -12,7 +12,7 @@ pièges, consignes pour la session suivante).
 | 3   | Authentification    | 🟡 test manuel dû |
 | 4   | Cœur métier         | ✅ terminé        |
 | 5   | UI v1               | ✅ terminé        |
-| 6   | Admin & soft-delete | ⬜ à venir        |
+| 6   | Admin & soft-delete | ✅ terminé        |
 | 7   | Offline / PWA       | ⬜ à venir        |
 | 8   | CI & déploiement    | ✅ terminé        |
 
@@ -260,17 +260,66 @@ Notes :
   (HistoryPage centralise la lecture, AppShell montre déjà le rôle via
   /compte).
 
-## Milestone 6 — Admin & soft-delete
+## Milestone 6 — Admin & soft-delete ✅
 
-- [ ] Toggle « voir les suppressions » + bouton restaurer (admin)
-- [ ] Sélecteur de véhicule actif (admin) + édition infos véhicule
-- [ ] Filtre historique « par utilisateur » (admin)
-- [ ] Interdire en UI toute action réservée aux admins pour un membre
+- [x] Toggle « voir les suppressions » + bouton restaurer (admin)
+- [x] Sélecteur de véhicule actif (admin) + édition infos véhicule
+- [x] Filtre historique « par utilisateur » (admin)
+- [x] Interdire en UI toute action réservée aux admins pour un membre
       (la RLS garde la vérité, l'UI ne fait que l'afficher)
 
 Prérequis : milestone 5 ; un compte admin et un compte membre dans Supabase.
 
-Notes : —
+Notes :
+
+- **Écarts au contrat actés en D27 et D28** : colonne `profiles.email`
+  synchronisée par trigger depuis `auth.users` (indispensable aux libellés du
+  filtre — sinon des UUID ; le schéma `auth` n'est pas exposé aux clients), et
+  `deleted_by` conservé à la restauration (trace d'audit, D7). Migration
+  `20261126180000_profiles_email.sql` appliquée via MCP `apply_migration`
+  (même patron que M2 ; le réalignement CLI `db pull` reste dû) et
+  `src/types/supabase.ts` **régénéré** dans la foulée (D24) — attention : le
+  générateur MCP n'émet plus le bloc `graphql_public`, sans conséquence.
+- Gardes base prouvées par `supabase/tests/m6_admin_test.sql` (23/23, exécuté
+  cette session, auto-rollbacké) : bascule/édition véhicules silencieuses pour
+  un membre, effectives pour l'admin ; restauration membre = 0 ligne (admin
+  seul) ; **D18 revérifié** : restauration en conflit → KM_REGRESSION ;
+  synchronisation email (insert + update). Un UPDATE « né en conflit » étant
+  impossible (le trigger garde l'INSERT aussi), le conflit de restauration se
+  construit par chronologie glissante — voir le commentaire de la fixture.
+- Bascule du véhicule actif = **deux** écritures séquentielles côté
+  `vehiclesRepository.setActiveVehicle` (désactiver les autres puis activer la
+  cible) : l'index partiel unique interdit l'inverse. Fenêtre « aucun actif »
+  de quelques ms, sans impact à l'échelle D1 ; en cas d'échec, `useVehicles`
+  relit la flotte depuis la base (jamais d'optimisme sur un invariant base).
+- UI : route `/admin/vehicules` (page `features/vehicle/` + garde
+  `RequireAdmin` qui **patiente tant que le rôle n'est pas chargé**, sinon un
+  admin serait éjecté pendant le fetch du rôle) ; lien depuis `/compte` visible
+  des seuls admins ; historique enrichi (toggle, filtre, boutons par ligne,
+  auteur + date de suppression affichés à l'admin) — `ReadingRow` extrait en
+  composant propre.
+- `useReadings(options)` : filtres `{ includeDeleted, userId }` en primitifs
+  (changer l'un relance le fetch) ; `restore` relit après succès et **ne
+  prétend à rien sur un refus du trigger** ; `lastReading` ignore désormais les
+  lignes mortes (sinon le toggle fausserait la validation D6 du formulaire) ;
+  `softDelete` marque la ligne au lieu de la retirer quand le toggle est actif.
+- La régénération zod (D26) a rattrapé le contrat : `Profile.email` nullable
+  (une ligne née avant la migration n'a pas d'email), anti-dérive contrôlée par
+  le type généré.
+- Vérifié en réel (browser, véhicule **Dev** activé le temps de la session puis
+  Honda restauré, relevés de test purgés) : côté membre — zéro contrôle admin,
+  bouton supprimer uniquement sur ses lignes ; côté admin (m5-test promu/
+  rétrogradé en base, rechargement = relecture du rôle) — toggle, restauration
+  avec badge « Supprimé le … », filtre par utilisateur (emails lisibles),
+  bascule aller-retour Honda/Dev, édition modèle Honda faite puis annulée ;
+  membre tentant `/admin/vehicules` → renvoyé au dashboard. Zéro erreur
+  console.
+- Session suivante (M7) : le compteur de relevés est passé à zéro en base
+  (fixture M5 purgée avant cette session) ; la file IndexedDB devra passer par
+  `useReadings`/`addReading` tels quels — l'item hors-ligne se rejouera via les
+  mêmes repos et le trigger D6 reste la vérité au renvoi. Les filtres admin
+  n'ont pas de sens hors-ligne : ignorer `includeDeleted`/`userId` dans la
+  file.
 
 ## Milestone 7 — Offline / PWA
 
@@ -347,5 +396,7 @@ Notes :
   explicitement au milestone 3.
 - Ne jamais embarquer la clé `service_role` dans le bundle (repo public).
 - Réalignement migrations locales ↔ distantes (`supabase db pull`) reporté
-  par la session milestone 8 (CLI absent) : à faire avant la prochaine
-  migration SQL, sinon le CLI recreusera un conflit d'historique.
+  par la session milestone 8 (CLI absent) : toujours dû. Les migrations M6
+  (D27) ont été appliquées via MCP `apply_migration` comme celles de M2 — le
+  nom local horodaté et l'entrée distante diffèrent, sans impact tant que le
+  CLI n'est pas utilisé ; à traiter avant le premier usage du CLI.

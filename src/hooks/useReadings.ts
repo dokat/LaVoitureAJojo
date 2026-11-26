@@ -1,6 +1,8 @@
-// Hook du flux relevés : lecture de la chronologie du véhicule actif, ajout
-// (avec photo compressée puis uploadée), soft-delete. Orchestration seule —
-// les règles vivent dans les repositories (base) et validateOdometer (UX).
+// Hook du flux relevés : lecture de la chronologie du véhicule actif (avec
+// filtres admin M6 : suppressions incluses, par utilisateur), ajout (avec
+// photo compressée puis uploadée), soft-delete et restauration. Orchestration
+// seule — les règles vivent dans les repositories (base) et validateOdometer
+// (UX).
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import type { OdometerPoint } from '@/hooks/useOdometerValidation'
@@ -13,6 +15,13 @@ import type { Reading } from '@/schemas/kilometers'
 import type { Vehicle } from '@/schemas/vehicles'
 
 export type ReadingsStatus = 'loading' | 'ready' | 'error'
+
+export type UseReadingsOptions = {
+  /** Toggle admin « voir les suppressions » (D7, milestone 6). */
+  includeDeleted?: boolean
+  /** Filtre « par utilisateur » admin (D8, milestone 6). */
+  userId?: string | null
+}
 
 export type AddReadingInput = {
   km: number
@@ -40,7 +49,8 @@ function describe(error: unknown): DataError {
   return toDataError(error)
 }
 
-export function useReadings() {
+export function useReadings(options: UseReadingsOptions = {}) {
+  const { includeDeleted = false, userId = null } = options
   const { user } = useAuth()
   const [vehicle, setVehicle] = useState<Vehicle | null>(null)
   const [readings, setReadings] = useState<Reading[]>([])
@@ -49,6 +59,8 @@ export function useReadings() {
 
   // Cœur de lecture : aucun setState synchrone avant un await — le montage
   // passe par lui sans déclencher de rendu en cascade (règle lint react).
+  // Les filtres (admin, M6) sont des primitifs : changer l'un relance la
+  // lecture, sans dépendre de l'identité de l'objet d'options.
   const fetchAndApply = useCallback(async (): Promise<DataError | null> => {
     try {
       const active = await vehiclesRepository.getActiveVehicle()
@@ -58,7 +70,10 @@ export function useReadings() {
           'Aucun véhicule actif — l\u2019administrateur doit en activer un.',
         )
       }
-      const list = await kilometersRepository.listReadings(active.id)
+      const list = await kilometersRepository.listReadings(active.id, {
+        includeDeleted,
+        userId: userId ?? undefined,
+      })
       setReadings(list)
       setVehicle(active)
       setError(null)
@@ -70,7 +85,7 @@ export function useReadings() {
       setStatus('error')
       return failure
     }
-  }, [])
+  }, [includeDeleted, userId])
 
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- setState après await uniquement (fetch de montage, pas de lib de données)
@@ -135,7 +150,11 @@ export function useReadings() {
     [user, vehicle, fetchAndApply],
   )
 
-  /** Soft-delete (D7) : la ligne reste en base, invisible par défaut. */
+  /**
+   * Soft-delete (D7) : la ligne reste en base. Invisible par défaut, elle est
+   * retirée de la liste ; avec le toggle admin « voir les suppressions », elle
+   * y reste marquée supprimée (l'UI affiche alors le bouton restaurer).
+   */
   const softDelete = useCallback(
     async (readingId: string): Promise<DataError | null> => {
       if (!user) {
@@ -143,23 +162,50 @@ export function useReadings() {
       }
       try {
         await kilometersRepository.softDeleteReading(readingId, user.id)
-        setReadings((current) => current.filter((r) => r.id !== readingId))
+        setReadings((current) =>
+          includeDeleted
+            ? current.map((r) =>
+                r.id === readingId
+                  ? { ...r, deletedAt: new Date(), deletedBy: user.id }
+                  : r,
+              )
+            : current.filter((r) => r.id !== readingId),
+        )
         return null
       } catch (caught) {
         return describe(caught)
       }
     },
-    [user],
+    [user, includeDeleted],
   )
 
-  /** Point d'appui D6 : premier élément du tri de récence. */
-  const lastReading = useMemo<OdometerPoint | null>(
-    () =>
-      readings.length > 0
-        ? { km: readings[0].km, readingAt: readings[0].readingAt }
-        : null,
-    [readings],
+  /**
+   * Restauration (D7, admin) : relecture depuis la base après coup — en cas
+   * de refus D6 (D18), c'est la chronologie réelle qu'il faut afficher, pas
+   * un état optimiste. Retourne null si OK, l'erreur typée sinon.
+   */
+  const restore = useCallback(
+    async (readingId: string): Promise<DataError | null> => {
+      try {
+        await kilometersRepository.restoreReading(readingId)
+        await fetchAndApply()
+        return null
+      } catch (caught) {
+        return describe(caught)
+      }
+    },
+    [fetchAndApply],
   )
+
+  /**
+   * Point d'appui D6 : premier relevé VIVANT du tri de récence. Avec le
+   * toggle admin, readings peut porter des lignes mortes : elles ne comptent
+   * pas (la chronologie vue par la base est celle des vivants).
+   */
+  const lastReading = useMemo<OdometerPoint | null>(() => {
+    const latest = readings.find((r) => r.deletedAt === null) ?? null
+    return latest ? { km: latest.km, readingAt: latest.readingAt } : null
+  }, [readings])
 
   return {
     status,
@@ -169,6 +215,7 @@ export function useReadings() {
     lastReading,
     addReading,
     softDelete,
+    restore,
     reload,
   }
 }

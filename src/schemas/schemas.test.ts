@@ -97,10 +97,22 @@ describe('profileRowSchema + rôle (D8)', () => {
     const profile: Profile = profileRowSchema.parse({
       id: UUID_C,
       role: 'admin',
+      email: 'jo@example.com',
       created_at: '2026-01-01T00:00:00Z',
     })
     expect(profile.role).toBe('admin')
+    expect(profile.email).toBe('jo@example.com')
     expect(profile.createdAt).toBeInstanceOf(Date)
+  })
+
+  it('accepte email null (ligne antérieure à la migration D27)', () => {
+    const profile: Profile = profileRowSchema.parse({
+      id: UUID_C,
+      role: 'membre',
+      email: null,
+      created_at: '2026-01-01T00:00:00Z',
+    })
+    expect(profile.email).toBeNull()
   })
 
   it('ne promeut jamais par défaut : toute valeur hors enum vaut « membre »', () => {

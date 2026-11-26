@@ -6,7 +6,7 @@ session n'exécute qu'un seul milestone, le sien.
 
 ## Déroulé de session
 
-1. Lire `docs/decisions.md` (contrat de design, D1→D17) puis
+1. Lire `docs/decisions.md` (contrat de design, D1→D28) puis
    `docs/plan-execution.md` : tableaux de statut, tâches cochables, notes des
    sessions précédentes.
 2. Le milestone à exécuter = la première ligne du tableau de statut qui n'est

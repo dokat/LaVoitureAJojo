@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   insertReading: vi.fn(),
   attachPhoto: vi.fn(),
   softDeleteReading: vi.fn(),
+  restoreReading: vi.fn(),
   uploadPhoto: vi.fn(),
   compressPhoto: vi.fn(),
 }))
@@ -28,6 +29,7 @@ vi.mock('@/repositories/kilometersRepository', () => ({
   insertReading: mocks.insertReading,
   attachPhoto: mocks.attachPhoto,
   softDeleteReading: mocks.softDeleteReading,
+  restoreReading: mocks.restoreReading,
 }))
 vi.mock('@/repositories/photosRepository', () => ({
   photoPath: vi.fn(),
@@ -85,6 +87,10 @@ describe('useReadings — lecture', () => {
     const { result } = await mounted()
     expect(result.current.vehicle).toEqual(vehicle)
     expect(result.current.readings).toHaveLength(1)
+    expect(mocks.listReadings).toHaveBeenCalledWith('v1', {
+      includeDeleted: false,
+      userId: undefined,
+    })
     expect(result.current.lastReading).toEqual({
       km: 50000,
       readingAt: new Date('2026-11-20T10:00:00Z'),
@@ -226,5 +232,84 @@ describe('useReadings — softDelete', () => {
     expect(mocks.softDeleteReading).toHaveBeenCalledWith('r1', 'u1')
     expect(result.current.readings).toHaveLength(0)
     expect(result.current.lastReading).toBeNull()
+  })
+
+  it('avec le toggle admin, la ligne reste visible marquée supprimée (D7)', async () => {
+    const view = renderHook(() => useReadings({ includeDeleted: true }))
+    await waitFor(() => expect(view.result.current.status).toBe('ready'))
+
+    const error = await act(async () => view.result.current.softDelete('r1'))
+    expect(error).toBeNull()
+    expect(view.result.current.readings).toHaveLength(1)
+    expect(view.result.current.readings[0]).toMatchObject({
+      id: 'r1',
+      deletedBy: 'u1',
+    })
+    expect(view.result.current.readings[0].deletedAt).toBeInstanceOf(Date)
+  })
+})
+
+describe('useReadings — filtres admin (M6)', () => {
+  it('recharge la chronologie quand le filtre utilisateur change', async () => {
+    const view = renderHook(
+      ({ userId }: { userId: string | null }) => useReadings({ userId }),
+      { initialProps: { userId: null as string | null } },
+    )
+    await waitFor(() => expect(view.result.current.status).toBe('ready'))
+    expect(mocks.listReadings).toHaveBeenLastCalledWith('v1', {
+      includeDeleted: false,
+      userId: undefined,
+    })
+
+    view.rerender({ userId: 'u2' })
+    await waitFor(() => expect(mocks.listReadings).toHaveBeenCalledTimes(2))
+    expect(mocks.listReadings).toHaveBeenLastCalledWith('v1', {
+      includeDeleted: false,
+      userId: 'u2',
+    })
+  })
+
+  it('avec includeDeleted, lastReading ignore les lignes mortes (D6)', async () => {
+    mocks.listReadings.mockResolvedValue([
+      reading({ id: 'r9', km: 60000, deletedAt: new Date('2026-11-25') }),
+      reading({ id: 'r1', km: 50000 }),
+    ])
+    const { result } = renderHook(() => useReadings({ includeDeleted: true }))
+    await waitFor(() => expect(result.current.status).toBe('ready'))
+    expect(result.current.readings).toHaveLength(2)
+    expect(result.current.lastReading).toEqual({
+      km: 50000,
+      readingAt: new Date('2026-11-20T10:00:00Z'),
+    })
+  })
+})
+
+describe('useReadings — restore (admin, D7/D18)', () => {
+  it('restaure puis relit la liste depuis la base', async () => {
+    const { result } = await mounted()
+    mocks.restoreReading.mockResolvedValue(reading({ restoredAt: new Date() }))
+    mocks.listReadings.mockResolvedValue([
+      reading(),
+      reading({ id: 'r9', deletedAt: null }),
+    ])
+
+    const error = await act(async () => result.current.restore('r9'))
+    expect(error).toBeNull()
+    expect(mocks.restoreReading).toHaveBeenCalledWith('r9')
+    // Relecture : la chronologie réelle est la vérité, pas un état optimiste.
+    await waitFor(() => expect(result.current.readings).toHaveLength(2))
+  })
+
+  it('restauration en conflit D6 : erreur typée remontée, pas de fausse joie', async () => {
+    const { result } = await mounted()
+    mocks.restoreReading.mockRejectedValue(
+      new DataError('km_regression', 'KM_REGRESSION: …'),
+    )
+
+    const error = await act(async () => result.current.restore('r9'))
+    expect(error).toMatchObject({ code: 'km_regression' })
+    // Le trigger a annulé l'update : la base n'a pas bougé, on ne prétend
+    // rien sans relecture — la liste affichée reste celle d'avant.
+    expect(result.current.readings).toHaveLength(1)
   })
 })

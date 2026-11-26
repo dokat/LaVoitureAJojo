@@ -116,3 +116,21 @@ export async function softDeleteReading(
     .eq('id', readingId)
   if (error) throw toDataError(error)
 }
+
+/**
+ * Restauration (D7, admin seul — la policy « admin gere tous les releves »
+ * est la seule à passer USING sur une ligne morte ; pour un membre, 0 ligne
+ * touchée, silencieusement). `deleted_by` reste posé : trace d'audit.
+ * Le trigger D6 recontrôle la remise en chronologie (D18) → KM_REGRESSION
+ * possible, convertie en DataError typée.
+ */
+export async function restoreReading(readingId: string): Promise<Reading> {
+  const { data, error } = await supabase
+    .from('kilometers')
+    .update({ deleted_at: null, restored_at: new Date().toISOString() })
+    .eq('id', readingId)
+    .select('*')
+    .single()
+  if (error) throw toDataError(error)
+  return toReading(data)
+}

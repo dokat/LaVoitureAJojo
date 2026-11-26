@@ -20,7 +20,7 @@ function toProfile(row: ProfileRowInput): Profile {
 export async function listProfiles(): Promise<Profile[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, role, created_at')
+    .select('id, role, email, created_at')
     .order('created_at')
   if (error) throw toDataError(error)
   return (data ?? []).map(toProfile)
@@ -29,7 +29,7 @@ export async function listProfiles(): Promise<Profile[]> {
 export async function getProfile(id: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, role, created_at')
+    .select('id, role, email, created_at')
     .eq('id', id)
     .maybeSingle()
   if (error) throw toDataError(error)

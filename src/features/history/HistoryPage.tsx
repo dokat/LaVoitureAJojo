@@ -1,121 +1,42 @@
-// Historique v1 (D4) : liste chronologique inversée (la plus récente en
-// tête — ordre garanti par useReadings), photo cliquable via URL signée
-// (D16). Pas de suppression ici : le soft-delete est l'objet du milestone 6.
+// Historique (M5 + M6) : liste chronologique inversée, photo cliquable (URL
+// signée, D16). Milestone 6 : actions de suppression douce par ligne (auteur
+// ou admin) et contrôles admin — toggle « voir les suppressions » (D7) et
+// filtre « par utilisateur » (D8). Un membre ne voit jamais ces contrôles :
+// l'UI reflète la RLS, elle ne la remplace pas.
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useAuth } from '@/hooks/useAuth'
+import { useProfiles } from '@/hooks/useProfiles'
 import { useReadings } from '@/hooks/useReadings'
-import { usePhotoUrl } from '@/hooks/usePhotoUrl'
-import { formatDateTime, formatKm } from '@/lib/format'
-import type { Reading } from '@/schemas/kilometers'
-
-function PhotoThumbnail({ reading }: { reading: Reading }) {
-  const { url, status, error, load } = usePhotoUrl(reading.photoPath)
-
-  if (!reading.photoPath) return null
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="rounded-lg ring-1 ring-foreground/10 transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
-          // URL signée éphémère (10 min) : on en régénère une à chaque
-          // ouverture ; l'ancienne reste affichée pendant le rechargement.
-          onClick={() => void load()}
-          aria-label={`Photo du relevé du ${formatDateTime(reading.readingAt)}`}
-        >
-          {url ? (
-            <img
-              src={url}
-              alt={`Photo du relevé de ${formatKm(reading.km)} km`}
-              className="size-16 rounded-lg object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <span className="flex size-16 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">
-              Photo
-            </span>
-          )}
-        </button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{formatKm(reading.km)} km</DialogTitle>
-          <DialogDescription>
-            {formatDateTime(reading.readingAt)}
-          </DialogDescription>
-        </DialogHeader>
-        {status === 'loading' && !url && (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            Chargement de la photo…
-          </p>
-        )}
-        {status === 'error' && !url && (
-          <div className="grid gap-2 py-4 text-center">
-            <p role="alert" className="text-sm text-destructive">
-              {error?.message ?? 'Photo indisponible.'}
-            </p>
-            <Button variant="outline" onClick={() => void load()}>
-              Réessayer
-            </Button>
-          </div>
-        )}
-        {url && (
-          <img
-            src={url}
-            alt={`Photo du relevé de ${formatKm(reading.km)} km`}
-            className="max-h-[70svh] w-full rounded-lg object-contain"
-          />
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function ReadingRow({ reading }: { reading: Reading }) {
-  return (
-    <Card size="sm">
-      <CardContent className="flex items-center gap-3">
-        <PhotoThumbnail reading={reading} />
-        <div className="grid gap-0.5">
-          <div className="flex items-center gap-2">
-            <span className="font-medium tabular-nums">
-              {formatKm(reading.km)} km
-            </span>
-            {reading.fuelPercent !== null && (
-              <Badge variant="secondary">{reading.fuelPercent} %</Badge>
-            )}
-          </div>
-          <span className="text-xs text-muted-foreground">
-            {formatDateTime(reading.readingAt)}
-          </span>
-          {reading.notes && (
-            <span className="text-sm text-muted-foreground italic">
-              {reading.notes}
-            </span>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
+import { ReadingRow } from '@/features/history/ReadingRow'
 
 export function HistoryPage() {
-  const { status, error, readings, reload } = useReadings()
+  const { user, isAdmin } = useAuth()
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [filterUserId, setFilterUserId] = useState<string | null>(null)
+  const { profiles, labelOf } = useProfiles()
+
+  // Garde-fou tâche 4 : les filtres admin ne sont effectifs que pour un admin,
+  // y compris si l'état local a été posé avant une rétrogradation de rôle.
+  const { status, error, readings, softDelete, restore, reload } = useReadings({
+    includeDeleted: isAdmin && showDeleted,
+    userId: isAdmin ? filterUserId : null,
+  })
+
+  const liveCount = useMemo(
+    () => readings.filter((r) => r.deletedAt === null).length,
+    [readings],
+  )
 
   if (status === 'loading') {
     return (
@@ -142,16 +63,63 @@ export function HistoryPage() {
       <CardHeader>
         <CardTitle>Historique</CardTitle>
         <CardDescription>
-          {readings.length} relevé{readings.length > 1 ? 's' : ''}
+          {liveCount} relevé{liveCount > 1 ? 's' : ''}
+          {showDeleted && isAdmin
+            ? ` (+ ${readings.length - liveCount} supprimé${readings.length - liveCount > 1 ? 's' : ''})`
+            : ''}
         </CardDescription>
       </CardHeader>
+
+      {isAdmin && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="show-deleted"
+              checked={showDeleted}
+              onCheckedChange={setShowDeleted}
+            />
+            <Label htmlFor="show-deleted" className="text-sm font-normal">
+              Voir les suppressions
+            </Label>
+          </div>
+          <Select
+            value={filterUserId ?? 'all'}
+            onValueChange={(value) =>
+              setFilterUserId(value === 'all' ? null : value)
+            }
+          >
+            <SelectTrigger size="sm" className="w-auto gap-1">
+              <SelectValue placeholder="Tous les utilisateurs" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les utilisateurs</SelectItem>
+              {profiles.map((profile) => (
+                <SelectItem key={profile.id} value={profile.id}>
+                  {profile.email ?? `utilisateur ${profile.id.slice(0, 8)}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {readings.length === 0 && (
         <p className="py-8 text-center text-sm text-muted-foreground">
           Aucun relevé pour l’instant.
         </p>
       )}
       {readings.map((reading) => (
-        <ReadingRow key={reading.id} reading={reading} />
+        <ReadingRow
+          key={reading.id}
+          reading={reading}
+          actions={{
+            canDelete: reading.userId === user?.id || isAdmin,
+            canRestore: isAdmin,
+            authorLabel: isAdmin ? labelOf(reading.userId) : undefined,
+            onDelete: async (id) => (await softDelete(id))?.message ?? null,
+            onRestore: async (id) => (await restore(id))?.message ?? null,
+          }}
+        />
       ))}
     </div>
   )

@@ -24,11 +24,15 @@ export const profileRowSchema = z
   .object({
     id: z.uuid(),
     role: dbProfileRoleSchema,
+    // Copie de auth.users.email (D27) — libellés lisibles du filtre admin.
+    // Nullable : antérieur à la migration ou compte sans email.
+    email: z.string().nullable(),
     created_at: dbTimestamp,
   })
   .transform((row) => ({
     id: row.id,
     role: row.role,
+    email: row.email,
     createdAt: row.created_at,
   }))
 
