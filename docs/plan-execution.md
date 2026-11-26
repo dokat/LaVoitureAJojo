@@ -8,7 +8,7 @@ pièges, consignes pour la session suivante).
 | #   | Milestone           | Statut     |
 | --- | ------------------- | ---------- |
 | 1   | Scaffold            | ✅ terminé |
-| 2   | Schéma & RLS        | ⬜ à venir |
+| 2   | Schéma & RLS        | ✅ terminé |
 | 3   | Authentification    | ⬜ à venir |
 | 4   | Cœur métier         | ⬜ à venir |
 | 5   | UI v1               | ⬜ à venir |
@@ -40,25 +40,56 @@ tsconfig) ; le projet vit dans le sous-répertoire `LaVoitureAJojo/` d'un
 workspace `applis_web` (demande produit). Les briques shadcn actuelles
 importent `radix-ui` (paquet monolithique) et `lucide-react`.
 
-## Milestone 2 — Schéma & RLS
+## Milestone 2 — Schéma & RLS ✅
 
-- [ ] Migrations SQL versionnées (`supabase/migrations/`) : `profiles`,
+- [x] Migrations SQL versionnées (`supabase/migrations/`) : `profiles`,
       `vehicles` (avec le véhicule de dev), `kilometers`
-- [ ] Trigger SQL appliquant la règle anti-recul D6 à l'insertion
-- [ ] Policies RLS : SELECT tout authentifié ; INSERT tout authentifié sur
+- [x] Trigger SQL appliquant la règle anti-recul D6 à l'insertion
+- [x] Policies RLS : SELECT tout authentifié ; INSERT tout authentifié sur
       véhicule actif ; soft-delete par update des champs `deleted_*` (auteur
       ou admin) ; restauration admin
-- [ ] Helper SQL `is_admin()` basé sur `profiles.role`
-- [ ] Bucket storage privé `photos` + policies (lecture authentifiés,
+- [x] Helper SQL `is_admin()` basé sur `profiles.role`
+- [x] Bucket storage privé `photos` + policies (lecture authentifiés,
       écriture auteur) ; chemin objet `{user_id}/{reading_id}.jpg`
-- [ ] Seed : véhicule réel + véhicule dev, compte admin initial marqué à la
+- [x] Seed : véhicule réel + véhicule dev, compte admin initial marqué à la
       main
-- [ ] Test du déclenchement D6 via `pgTAP` ou SQL manuel documenté
+- [x] Test du déclenchement D6 via `pgTAP` ou SQL manuel documenté
 
 Prérequis : projet Supabase gratuit créé ; `SUPABASE_URL` + clé anon dans
 `.env.local` ; un compte créé dans Supabase Auth pour le futur admin.
 
-Notes : —
+Notes :
+- Le compte admin `jonathan.perrinet@gmail.com` a été **créé par SQL** pendant
+  cette session (auth.users, email confirmé) avec un **mot de passe
+  temporaire communiqué en chat, jamais commité** → le changer (reset email
+  dès que le flux milestone 3 existe, ou dashboard > Users).
+- Écart pgTAP : l'extension n'est pas activée (CLI absent) ; les tests sont
+  des scripts SQL documentés dans `supabase/tests/`, auto-rollbackés, à
+  exécuter d'un trait dans le SQL Editor. Résultat 2026-11-26 : D6 12/12,
+  RLS 20/20 + anon 0 fuite.
+- Le trigger D6 (`enforce_odometer_no_regression`) ne recontrôle **que**
+  l'insertion et la restauration (deleted_at → NULL) ; soft-delete = toujours
+  permitted. `TG_OP` est en MAJUSCULES — premier jet comparait à 'update',
+  corrigé avant commit. Le trigger `kilometers_immutable` garde km/reading_at/
+  vehicle_id/user_id (D7 : pas d'édition, suppression + ressaisie).
+- Sémantique RLS piégeuse : un UPDATE dont la ligne ne passe pas USING ne
+  lève **rien** (0 ligne, silencieux) ; seule une violation WITH CHECK lève
+  42501. Les tests jugent l'**état**, pas l'exception (voir en-tête de
+  `supabase/tests/rls_smoke_test.sql`).
+- `is_admin()` est SECURITY INVOKER (lit profiles via sa policy SELECT) ;
+  `handle_new_user()` (definer) a vu son EXECUTE retiré à public/anon/
+  authenticated et rendu à service_role + supabase_auth_admin +
+  supabase_admin, sinon les inscriptions GoTrue cassent.
+- Versions des migrations : appliquées via MCP `apply_migration`, l'historique
+  distant porte ses propres horodatages (≠ noms de fichiers du repo). Au
+  milestone 8, réaligner avec `supabase db pull`/CLI. Le seed de promotion
+  admin est un UPDATE par email : 0 ligne si le compte n'existe pas encore →
+  le rejouer à la main après création du compte.
+- Reste à faire **dans le dashboard** (hors SQL, prérequis milestone 3) :
+  activer la protection « leaked password » (advisors WARN), et la whitelist
+  d'emails (D15) dans Authentication → Sign In / Sign Up.
+- Bucket `photos` : privé, JPEG seul, limite 10 Mo côté bucket (cohérent
+  D16) ; pas de policies UPDATE/DELETE (les octets sont figés, D7).
 
 ## Milestone 3 — Authentification
 

@@ -167,3 +167,26 @@ kilometers (id, vehicle_id → vehicles, user_id → profiles,
 Policies RLS cible : SELECT pour tout authentifié ; INSERT pour tout
 authentifié (sur le véhicule actif, avec trigger de contrôle D6) ;
 soft-delete par l'auteur ou un admin ; restauration par admin seulement.
+
+## 7. Clarifications d'implémentation (2026-11-26, session milestone 2)
+
+Règle du repo : un écart au contrat s'ajoute ici daté, jamais une réécriture
+silencieuse. Ces deux points précisent D6/D7 côté SQL sans les contredire.
+
+### D18 — D6 recontrôlé à la restauration, pas à la suppression douce
+
+Le trigger anti-recul s'applique à l'insertion **et** à l'update qui remet
+`deleted_at` à NULL (restauration admin) : une restauration doit respecter la
+chronologie comme une insertion. À l'inverse, soft-delete (passage à
+`deleted_at` non NULL) n'est jamais bloqué par D6 — retirer une ligne de la
+chronologie est toujours possible (sinon supprimer le dernier relevé, qui est
+justement le cas d'usage du soft-delete, serait interdit).
+
+### D19 — Immutabilité D7 gardée par trigger de colonnes
+
+« Pas d'édition du kilométrage » est techniquement une interdiction d'UPDATE
+sur `km`, `reading_at`, `vehicle_id`, `user_id`, `created_at` (trigger
+`kilometers_immutable`). Restent modifiables : `photo_path` (la photo est
+uploadée après l'insertion, son chemin contient l'id du relevé — D16),
+`notes`, `fuel_percent`, `deleted_*`, `restored_at`. Erreur typée
+`KM_IMMUTABLE` pour que les repositories la convertissent (D10).
