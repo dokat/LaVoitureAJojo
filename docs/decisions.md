@@ -190,3 +190,25 @@ sur `km`, `reading_at`, `vehicle_id`, `user_id`, `created_at` (trigger
 uploadée après l'insertion, son chemin contient l'id du relevé — D16),
 `notes`, `fuel_percent`, `deleted_*`, `restored_at`. Erreur typée
 `KM_IMMUTABLE` pour que les repositories la convertissent (D10).
+
+## 8. Réorganisation et clarifications (2026-11-26, session milestone 8)
+
+### D20 — Milestone 8 exécuté avant les milestones 3-7
+
+À la demande produit : le dépôt GitHub est relié, on câble le déploiement
+maintenant. Conséquence assumée : la vérification « de visu » des signed URLs
+et du callback OAuth depuis le domaine Pages (dernière tâche du milestone 8)
+est impossible — l'app est encore un placeholder sans auth ni saisie. Elle est
+reportée à la session du milestone 3, la plus ancienne dépendante de ce point.
+Le domaine Pages devient une donnée du contrat :
+`https://dokat.github.io/LaVoitureAJojo/` (URL à déclarer dans les redirect
+URLs de Supabase Auth quand le flux OAuth existera).
+
+### D21 — La clé « publishable » remplace la clé « anon » (D17 inchangée)
+
+Le projet Supabase livre une clé `sb_publishable_…` (nouvelle génération) qui
+remplace la clé anon JWT `eyJ…` avec le même rôle : clé publique, soumise à la
+RLS. D17 (« seules l'URL et la clé publique figurent dans le dépôt ») reste
+vraie. Décision de nommage : le nom de variable `VITE_SUPABASE_ANON_KEY` est
+conservé dans le code, `.env.example` et les secrets GitHub ; la valeur peut
+être l'une ou l'autre des deux formes de clé.

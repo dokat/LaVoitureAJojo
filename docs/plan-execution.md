@@ -14,7 +14,7 @@ pièges, consignes pour la session suivante).
 | 5   | UI v1               | ⬜ à venir |
 | 6   | Admin & soft-delete | ⬜ à venir |
 | 7   | Offline / PWA       | ⬜ à venir |
-| 8   | CI & déploiement    | ⬜ à venir |
+| 8   | CI & déploiement    | ✅ terminé |
 
 ## Milestone 1 — Scaffold ✅
 
@@ -59,6 +59,7 @@ Prérequis : projet Supabase gratuit créé ; `SUPABASE_URL` + clé anon dans
 `.env.local` ; un compte créé dans Supabase Auth pour le futur admin.
 
 Notes :
+
 - Le compte admin `jonathan.perrinet@gmail.com` a été **créé par SQL** pendant
   cette session (auth.users, email confirmé) avec un **mot de passe
   temporaire communiqué en chat, jamais commité** → le changer (reset email
@@ -73,8 +74,7 @@ Notes :
   corrigé avant commit. Le trigger `kilometers_immutable` garde km/reading_at/
   vehicle_id/user_id (D7 : pas d'édition, suppression + ressaisie).
 - Sémantique RLS piégeuse : un UPDATE dont la ligne ne passe pas USING ne
-  lève **rien** (0 ligne, silencieux) ; seule une violation WITH CHECK lève
-  42501. Les tests jugent l'**état**, pas l'exception (voir en-tête de
+  lève **rien** (0 ligne, silencieux) ; seule une violation WITH CHECK lève 42501. Les tests jugent l'**état**, pas l'exception (voir en-tête de
   `supabase/tests/rls_smoke_test.sql`).
 - `is_admin()` est SECURITY INVOKER (lit profiles via sa policy SELECT) ;
   `handle_new_user()` (definer) a vu son EXECUTE retiré à public/anon/
@@ -161,18 +161,52 @@ Prérequis : milestones 4-5 (la saisie en ligne existe).
 
 Notes : —
 
-## Milestone 8 — CI & déploiement
+## Milestone 8 — CI & déploiement ✅
 
-- [ ] Dépôt GitHub public ; push sur `main`
-- [ ] Workflow GitHub Actions : typecheck + lint + build → Pages (base path
+- [x] Dépôt GitHub public ; push sur `main`
+- [x] Workflow GitHub Actions : typecheck + lint + build → Pages (base path
       `/<repo>/`)
-- [ ] Secrets `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
-- [ ] Vérifier signed URLs et callback OAuth depuis le domaine Pages
+- [x] Secrets `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
+- [ ] Vérifier signed URLs et callback OAuth depuis le domaine Pages —
+      reporté au milestone 3, sans objet sur un placeholder sans auth (D20)
 
 Prérequis : milestone 7 ; compte GitHub ; redirection OAuth Supabase pointant
 aussi vers l'URL Pages.
 
-Notes : —
+Notes :
+
+- Exécuté **hors ordre** (milestones 3-7 non faits), décision produit D20. Ce
+  qui est réellement acquis : pipeline CI + site live ; ce qui est reporté :
+  toute vérification comportementale exigeant login ou photos.
+- Site : `https://dokat.github.io/LaVoitureAJojo/` (200 ✅). Dépôt
+  `dokat/LaVoitureAJojo` public, Pages en `build_type: workflow`.
+- Workflow `.github/workflows/deploy.yml` : push sur `main` (ou dispatch
+  manuel) → `npm ci`, `typecheck` (script ajouté), `lint`, `build`,
+  `configure-pages`, `upload-pages-artifact`, `deploy-pages`. Les 4 clés d'API
+  publiques utilisées (checkout/setup-node/configure-pages v4,
+  upload-pages-artifact v3, deploy-pages v4) sont les versions mineures
+  stables à la date de session.
+- Base path : `vite.config.ts` lit `BASE_PATH` (défaut `/` en local) ; le
+  workflow injecte `/<nom-du-dépôt>/`. Un futur changement de nom de dépôt
+  GitHub casse les URLs — à savoir, pas besoin de config supplémentaire.
+- `cp dist/index.html dist/404.html` : fallback SPA déjà en place, requis dès
+  que react-router exposera des URLs profondes (milestone 3+). Vérifié : une
+  URL inconnue renvoie le HTML de l'app avec les chemins `/LaVoitureAJojo/…`
+  (le statut HTTP 404 est inhérent à Pages, le navigateur rend la page).
+- Secrets GitHub : URL du projet + clé **publishable** (D21). `.env.local`
+  local utilisait `VITE_SUPABASE_PUBLISHABLE_KEY` ; renommé en
+  `VITE_SUPABASE_ANON_KEY` pour coller à `lib/supabase.ts`. Vérifié : la clé
+  publishable est acceptée par Auth/Storage/PostgREST sur ce projet.
+  L'embarquement des env dans le bundle n'est pas encore observable (aucun
+  module n'importe `lib/supabase.ts` — tree-shaking) ; à confirmer au
+  milestone 3 quand le client Supabase sera vivant en prod.
+- Prévu ici mais **non fait** : réalignement de l'historique de migrations
+  local avec le distant (`supabase db pull`, cf. notes milestone 2) — CLI
+  Supabase absent de ce poste. Reste dû ; à traiter avant toute nouvelle
+  migration (cf. Dette).
+- Session suivante (milestone 3) : déclarer l'URL Pages dans les Allowed
+  Redirect URLs de Supabase Auth ; faire la vérification reportée de la
+  tâche 4 ; changer le mot de passe temporaire de l'admin (notes M2).
 
 ## Dette / points de vigilance
 
@@ -183,3 +217,6 @@ Notes : —
 - La whitelist d'emails Supabase s'applique aussi à OAuth Google — à tester
   explicitement au milestone 3.
 - Ne jamais embarquer la clé `service_role` dans le bundle (repo public).
+- Réalignement migrations locales ↔ distantes (`supabase db pull`) reporté
+  par la session milestone 8 (CLI absent) : à faire avant la prochaine
+  migration SQL, sinon le CLI recreusera un conflit d'historique.
