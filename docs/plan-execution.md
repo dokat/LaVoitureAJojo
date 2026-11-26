@@ -5,16 +5,16 @@ s'exécute dans une session dédiée (protocole dans `AGENTS.md` à la racine).
 Chaque section porte ses tâches, ses **prérequis** et ses **notes** (écarts,
 pièges, consignes pour la session suivante).
 
-| #   | Milestone           | Statut     |
-| --- | ------------------- | ---------- |
-| 1   | Scaffold            | ✅ terminé |
-| 2   | Schéma & RLS        | ✅ terminé |
-| 3   | Authentification    | ⬜ à venir |
-| 4   | Cœur métier         | ⬜ à venir |
-| 5   | UI v1               | ⬜ à venir |
-| 6   | Admin & soft-delete | ⬜ à venir |
-| 7   | Offline / PWA       | ⬜ à venir |
-| 8   | CI & déploiement    | ✅ terminé |
+| #   | Milestone           | Statut            |
+| --- | ------------------- | ----------------- |
+| 1   | Scaffold            | ✅ terminé        |
+| 2   | Schéma & RLS        | ✅ terminé        |
+| 3   | Authentification    | 🟡 test manuel dû |
+| 4   | Cœur métier         | ⬜ à venir        |
+| 5   | UI v1               | ⬜ à venir        |
+| 6   | Admin & soft-delete | ⬜ à venir        |
+| 7   | Offline / PWA       | ⬜ à venir        |
+| 8   | CI & déploiement    | ✅ terminé        |
 
 ## Milestone 1 — Scaffold ✅
 
@@ -91,20 +91,57 @@ Notes :
 - Bucket `photos` : privé, JPEG seul, limite 10 Mo côté bucket (cohérent
   D16) ; pas de policies UPDATE/DELETE (les octets sont figés, D7).
 
-## Milestone 3 — Authentification
+## Milestone 3 — Authentification 🟡
 
-- [ ] `authRepository` (signIn password, OAuth Google, reset, session,
+- [x] `authRepository` (signIn password, OAuth Google, reset, session,
       `onAuthStateChange`)
-- [ ] Hook `useAuth` + provider ; écran login ; route protégée
+- [x] Hook `useAuth` + provider ; écran login ; route protégée
       (`react-router`)
-- [ ] Rôle admin chargé depuis `profiles` au login (et pas seulement depuis
+- [x] Rôle admin chargé depuis `profiles` au login (et pas seulement depuis
       le JWT)
 - [ ] Test manuel : whitelist d'emails Supabase — vérifier qu'une inscription
-      Google hors liste est bien refusée (D15)
+      Google hors liste est bien refusée (D15) ← **reste dû** : exige la
+      configuration du dashboard (provider Google + whitelist), voir Notes
 
 Prérequis : milestone 2 appliqué sur le projet Supabase.
 
-Notes : —
+Notes :
+
+- Architecture : le moteur est `hooks/useAuthState.ts` (sans JSX, règle des
+  hooks), branché au contexte par `features/auth/AuthProvider.tsx` ; l'UI lit
+  via `hooks/useAuth.ts`. Le fetch du rôle (`fetchProfileRole`) vit dans
+  `authRepository` — lecture limitée à la session ; `profilesRepository`
+  (CRUD profils) arrive bien au milestone 4. Écart acté en D22.
+- **Piège GoTrue / création SQL de comptes** (compte de démo : 400
+  `invalid_credentials` puis 500 « Database error querying schema » avec un
+  hash bcrypt pourtant valide) : GoTrue scanne `auth.users` dans des types
+  non-NULL — `instance_id`, `created_at`, `updated_at`, `confirmation_token`,
+  `recovery_token`, `email_change*`, `*_change_token`, `reauthentication_token`
+  ne doivent **jamais rester NULL** à l'insertion. Ne jamais laisser `phone`
+  à `''` (contrainte UNIQUE) : le garder NULL. **La ligne du compte admin
+  (créée au milestone 2) a été réalignée sur ces valeurs pendant cette
+  session.**
+  Pour tout futur compte SQL : soit passer par l'API admin/dashboard, soit
+  reprendre la commande `insert` du script de dév de cette session (colonnes
+  complètes + defaults `''`).
+- Vérifié en réel (browser + compte de test créé/supprimé en SQL) : redirect
+  non connecté → `/login`, erreur identifiants typée en français, login
+  email+password → page protégée, rôle lu depuis `profiles` (promu
+  admin en base → UI affiche admin après reload, JWT inchangé — D8 validée),
+  déconnexion, garde de route, mode « mot de passe oublié ». Zéro erreur
+  console.
+- **Fait dans le dashboard Supabase (bloquant pour la tâche 4 et pour le
+  dev)** : Site URL + Allowed Redirect URLs (`http://localhost:5173/auth/callback`
+  et `https://dokat.github.io/LaVoitureAJojo/auth/callback`, D20) ; whitelist
+  d'emails (D15) ; protection leaked-password (toujours WARN aux advisors
+  2026-11-26) ; provider Google (client ID/secret) s'il n'est pas déjà
+  configuré. La vérification reportée du milestone 8 (callback OAuth depuis
+  le domaine Pages) se fera avec le test whitelist.
+- Mot de passe temporaire de l'admin (notes M2) : toujours à changer — le
+  faire dès que le lien de reset fonctionne (le flux existe maintenant).
+- `react-router` v8 : le paquet s'importe directement (pas de
+  `react-router-dom`) ; `basename={import.meta.env.BASE_URL}` aligne le
+  routage sur le base path Pages (D17).
 
 ## Milestone 4 — Cœur métier
 

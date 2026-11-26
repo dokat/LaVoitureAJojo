@@ -212,3 +212,15 @@ RLS. D17 (« seules l'URL et la clé publique figurent dans le dépôt ») reste
 vraie. Décision de nommage : le nom de variable `VITE_SUPABASE_ANON_KEY` est
 conservé dans le code, `.env.example` et les secrets GitHub ; la valeur peut
 être l'une ou l'autre des deux formes de clé.
+
+## 9. Clarifications d'implémentation (2026-11-26, session milestone 3)
+
+### D22 — Lecture du rôle rattachée à l'auth, pas à un profilesRepository
+
+La tâche « rôle chargé depuis `profiles` au login » est une lecture
+d'identité de session, pas un CRUD de profil : elle vit dans
+`authRepository.fetchProfileRole()`. `profilesRepository` (milestone 4) garde
+sa définition — accès généraux aux profils (afficher des utilisateurs, etc.).
+Le rôle n'est **jamais** lu depuis le JWT (il ne le porte pas, cf. commentaire
+de la migration `profiles`) ; défaut prudent : profil absent ou erreur de
+lecture ⇒ `membre`.
