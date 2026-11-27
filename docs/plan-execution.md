@@ -494,7 +494,10 @@ Contrat : D30-D40. Ce que la session doit produire, tout côté base :
       annulation → départ invisible de la chronologie ; levée d'annulation
       avec D6 revenue = refus ; restauration par agrégat (D37) ; index une
       sortie ouverte ; purge = tables vides vérifiée dans un rollback
-- [ ] `src/types/supabase.ts` régénéré (D24) — sinon M10 typecheck à l'aveugle
+- [ ] `src/types/supabase.ts` régénéré avec l'outil MCP Supabase
+      `generate_typescript_types` (client serverless, pas de CLI — la dette
+      `db pull` n'est pas un prérequis ; cf. doc Generating Types et D24) —
+      sinon M10 typecheck à l'aveugle
 
 Prérequis : milestones 2-7 (la base actuelle est en prod) ; sauvegarde
 exportée des `kilometers` avant la purge D40 (dump SQL via dashboard —
