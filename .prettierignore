@@ -3,3 +3,5 @@ package-lock.json
 src/index.css
 # skills installés (tiers) : à ne pas reformater
 .agents/
+# état local du CLI Supabase (profil lié, caches) — généré, pas du code
+supabase/.temp/

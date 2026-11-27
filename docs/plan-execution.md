@@ -5,19 +5,19 @@ s'exécute dans une session dédiée (protocole dans `AGENTS.md` à la racine).
 Chaque section porte ses tâches, ses **prérequis** et ses **notes** (écarts,
 pièges, consignes pour la session suivante).
 
-| #   | Milestone              | Statut            |
-| --- | ---------------------- | ----------------- |
-| 1   | Scaffold               | ✅ terminé        |
-| 2   | Schéma & RLS           | ✅ terminé        |
-| 3   | Authentification       | 🟡 test manuel dû |
-| 4   | Cœur métier            | ✅ terminé        |
-| 5   | UI v1                  | ✅ terminé        |
-| 6   | Admin & soft-delete    | ✅ terminé        |
-| 7   | Offline / PWA          | ✅ terminé        |
-| 8   | CI & déploiement       | ✅ terminé        |
-| 9   | Sorties — base SQL     | ⬜ à venir        |
-| 10  | Sorties — client       | ⬜ à venir        |
-| 11  | Sorties — UI           | ⬜ à venir        |
+| #   | Milestone           | Statut            |
+| --- | ------------------- | ----------------- |
+| 1   | Scaffold            | ✅ terminé        |
+| 2   | Schéma & RLS        | ✅ terminé        |
+| 3   | Authentification    | 🟡 test manuel dû |
+| 4   | Cœur métier         | ✅ terminé        |
+| 5   | UI v1               | ✅ terminé        |
+| 6   | Admin & soft-delete | ✅ terminé        |
+| 7   | Offline / PWA       | ✅ terminé        |
+| 8   | CI & déploiement    | ✅ terminé        |
+| 9   | Sorties — base SQL  | ✅ terminé        |
+| 10  | Sorties — client    | ⬜ à venir        |
+| 11  | Sorties — UI        | ⬜ à venir        |
 
 ## Milestone 1 — Scaffold ✅
 
@@ -450,63 +450,63 @@ Notes :
   Redirect URLs de Supabase Auth ; faire la vérification reportée de la
   tâche 4 ; changer le mot de passe temporaire de l'admin (notes M2).
 
-## Milestone 9 — Sorties : base SQL ⬜
+## Milestone 9 — Sorties : base SQL ✅
 
 Contrat : D30-D40. Ce que la session doit produire, tout côté base :
 
-- [ ] **Tâche 0 — réalignement migrations locales ↔ distante** (dette rendue
+- [x] **Tâche 0 — réalignement migrations locales ↔ distante** (dette rendue
       exigeante par l'installation du CLI, voir Dette) : créer
       `supabase/config.toml` (`npx supabase init`, ou à la main avec le
       `project_id` extrait de `VITE_SUPABASE_URL`), `npx supabase link
-      --project-ref <ref>`, puis `npx supabase migration repair --status
-      applied <version>` pour chaque fichier de `supabase/migrations/` (la
+--project-ref <ref>`, puis `npx supabase migration repair --status
+applied <version>` pour chaque fichier de `supabase/migrations/` (la
       table `schema_migrations` distante ignore nos noms horodatés — elle
       porte les entrées de `apply_migration` M2→M6). Vérifier avec
       `npx supabase db pull --dry-run` : aucune diff de schéma attendue.
       **Pas de `db push` avant** : il rejouerait tout et échouerait.
       Alternative si repair coince : `db pull` (v3 consigne l'historique à la
       volée) puis trier les fichiers.
-- [ ] Migration `trips` : `id`, `vehicle_id → vehicles`, `start_reading_id →
-      kilometers` (NOT NULL), `end_reading_id → kilometers` (NULL = en cours),
+- [x] Migration `trips` : `id`, `vehicle_id → vehicles`, `start_reading_id →
+kilometers` (NOT NULL), `end_reading_id → kilometers` (NULL = en cours),
       `cancelled_at` (NULL), `created_at` ; UNIQUE sur `start_reading_id` ET
       sur `end_reading_id` (D30 — rend le partage du relais légal et le
       double-usage impossible)
-- [ ] Index partiel UNIQUE `trips(vehicle_id)` WHERE `end_reading_id IS NULL
-      AND cancelled_at IS NULL` (D35, une sortie ouverte par véhicule)
-- [ ] Trigger de clôture (D34) : à l'UPDATE posant `end_reading_id`, exiger
+- [x] Index partiel UNIQUE `trips(vehicle_id)` WHERE `end_reading_id IS NULL
+AND cancelled_at IS NULL` (D35, une sortie ouverte par véhicule)
+- [x] Trigger de clôture (D34) : à l'UPDATE posant `end_reading_id`, exiger
       `km(arrivée) ≥ km(départ)` ET `reading_at(arrivée) ≥
-      reading_at(départ)` ; erreurs typées (`TRIP_KM_ORDER`, `TRIP_DATE_ORDER`)
+reading_at(départ)` ; erreurs typées (`TRIP_KM_ORDER`, `TRIP_DATE_ORDER`)
       reconnues par `repositories/errors.ts` au M10
-- [ ] Trigger d'insertion `trips` : le contrôle D6 sur le relevé de départ est
+- [x] Trigger d'insertion `trips` : le contrôle D6 sur le relevé de départ est
       déjà gardé à l'INSERT kilometers (rien à refaire) ; refuser une
       deuxième ouverture sans relais (garde de l'index partiel, message typé)
-- [ ] **Relais** (D35) : soit dans le trigger d'insertion `trips` (si une
+- [x] **Relais** (D35) : soit dans le trigger d'insertion `trips` (si une
       sortie ouverte existe pour le véhicule → tenter de la clôturer avec
       `NEW.start_reading_id`, refus typé `TRIP_RELAY_CONFLICT` si D34
       violée — jamais de cap implicite), soit fonction SQL explicite ;
       idempotent (rejeu offline, D39)
-- [ ] Trigger d'annulation/levée (D36) : poser `cancelled_at` ⇔ soft-delete /
+- [x] Trigger d'annulation/levée (D36) : poser `cancelled_at` ⇔ soft-delete /
       restauration du relevé de départ dans la même transaction ; levée
       recontrôlée par D18 (le trigger D6 existant sur UPDATE
       `deleted_at → NULL` doit suffire — le vérifier en test)
-- [ ] RLS `trips` : SELECT tout authentifié ; INSERT tout authentifié ;
+- [x] RLS `trips` : SELECT tout authentifié ; INSERT tout authentifié ;
       UPDATE clôture/annulation par l'auteur du départ OU admin (`is_admin()`)
       ; la suppression d'une sortie clôturée (D33) passe par les policies
       `kilometers` existantes (aucune écriture directe sur `trips` —
       contagion par les relevés)
-- [ ] Purge du patrimoine pré-sortie (D40) : collecte des `photo_path` des
+- [x] Purge du patrimoine pré-sortie (D40) : collecte des `photo_path` des
       lignes `kilometers`, suppression des objets storage correspondants
       (service_role ou dashboard — le bucket n'a pas de policy DELETE, cf.
       notes M5), puis DELETE physique des lignes. Ordre : octets d'abord,
       lignes ensuite (sinon plus rien ne pointe les orphelins)
-- [ ] Script de test SQL (`supabase/tests/trips_test.sql`, patron
+- [x] Script de test SQL (`supabase/tests/trips_test.sql`, patron
       auto-rollback M2) : ouverture normale ; relais OK (même relevé partagé,
       somme des distances) ; relais refusé (km et date) ; clôture refusée
       (km, date) ; clôture par un non-auteur membre = 0 ligne, admin = OK ;
       annulation → départ invisible de la chronologie ; levée d'annulation
       avec D6 revenue = refus ; restauration par agrégat (D37) ; index une
       sortie ouverte ; purge = tables vides vérifiée dans un rollback
-- [ ] Régénération (D24) : `npx supabase gen types typescript --linked`
+- [x] Régénération (D24) : `npx supabase gen types typescript --linked`
       (CLI installé le 2026-11-27 en devDependency, invocation via `npx`) ou
       outil MCP `generate_typescript_types` — les deux lisent le schéma réel,
       la dette de réalignement des migrations ne bloque **pas** la génération,
@@ -526,7 +526,80 @@ lui, le MCP n'interdit pas le CLI. Contrainte de cohérence seulement :
 
 Notes :
 
-- (à remplir par la session M9)
+- **Tâche 0 faite, la dette est soldée** — plus aucune migration MCP :
+  `npx supabase init` (v3) crée `supabase/config.jsonc` (pas `config.toml` :
+  écart de nommage dû à la version du CLI, sans effet contrat) ; `link`
+  fonctionne sans mot de passe (rôle de connexion via API de gestion) ;
+  `migration repair --status applied --remote --yes` pour les 10 fichiers
+  locaux — le repair v3 **copie les statements des fichiers locaux** dans la
+  table distante, qui porte donc désormais exactement le repo. Les entrées
+  `apply_migration` M2→M6 (versions 1503xx/1906xx en double) ont été
+  réparées en `reverted` (commande suggérée par `db push` qui les refusait).
+  Piège v3 : `db pull --dry-run` **n'existe plus** → vérifier l'alignement
+  par `db push --dry-run` (attendu `"upToDate": true`), et `db export`
+  s'appelle `db dump`. Tout `--remote` qui modifie demande `--yes` en agent.
+- Trois migrations poussées via CLI (`db push`, historique CLI unique
+  désormais) : `20261127120000_create_trips` (table + UNIQUE D30 + index
+  partiel D35 + triggers + RLS), `20261127121000_trip_assert_grant`
+  (correctif, cf. piège ci-dessous), `20261127130000_purge_legacy_kilometers`
+  (D40, `delete from kilometers` seul).
+- Architecture des triggers : `trip_assert_order(start, end, p_relay)`
+  centralise D34 (marqueurs `TRIP_KM_ORDER`/`TRIP_DATE_ORDER`, ou
+  `TRIP_RELAY_CONFLICT` en contexte relais) ; `trips_before_insert` est
+  **SECURITY DEFINER** (le relais clôture la sortie d'autrui — écriture
+  hors de portée de l'appelant, verrou `FOR UPDATE` sur la ligne ouverte) ;
+  `trips_before_update` est **SECURITY INVOKER** (ses écritures miroir dans
+  kilometers — soft-delete du départ à l'annulation, restauration à la
+  levée — restent sous les policies de l'appelant ; le droit d'atteindre la
+  ligne trips est borné par la policy auteur-du-départ-ou-admin). CHECK
+  `trips_not_closed_when_cancelled` (une sortie n'est pas à la fois fermée
+  et annulée) ; marqueur additionnel `TRIP_ADMIN_ONLY` (levée d'annulation)
+  et garde `TRIP_IMMUTABLE` (id/véhicule/départ/created_at figés ; une
+  sortie clôturée ne se réouvre pas).
+- **Piège trouvé par le test (règle pour la suite)** : le revoke EXECUTE posé
+  sur `trip_assert_order` bloquait toute clôture par un rôle authentifié —
+  un trigger SECURITY INVOKER appelle ses helpers **dans le contexte de
+  l'appelant**. D'où la migration 121000 qui rend EXECUTE à authenticated
+  (lecture seule des relevés, aucune écriture exposée). Les triggers
+  eux-mêmes restent non appelables par RPC.
+- **D40 exécuté** avec confirmation produit : 5 lignes `kilometers` (toutes
+  sur véhicule Dev — Honda n'a jamais eu de relevé) et 2 octets JPEG
+  supprimés (le référencé + un orphelin `91cfe55b-….jpg` découvert au `ls`
+  — purgé aussi, c'est l'objet de D40). Bucket `photos` vérifié vide
+  (`storage.objects` = 0), `kilometers` = 0, `trips` = 0. Ordre respecté :
+  octets d'abord via CLI `storage rm` (expérimental v3, URIs `ss:///…`),
+  lignes ensuite via la migration. **Filet** : dump SQL rejouable dans
+  `supabase/.temp/kilometers-pre-D40-20261127.sql` (gitignoré — repo public).
+  D7 redevient intégral pour toute donnée née après cette purge.
+- Test SQL : `supabase/tests/trips_test.sql`, **53/53** (exécuté via
+  `npx supabase db query --remote --yes --file` — un seul trait, auto-
+  rollback vérifié : 0 résidu users/véhicules/lignes). Patron m6 (juge par
+  l'état + `pg_temp.juge` étendu : le marqueur d'erreur est extrait du
+  message et jugé pour de vrai, et `check_violation`/`unique_violation` sont
+  dans les exceptions reconnues). Deux véhicules jetables : la chronologie
+  du conflit de levée D18 exige une vivante à date ≥ du départ (même date,
+  km supérieur) — d'où VB dédiée ; le scénario D40 (purge des deux tables
+  dans le rollback) y est répété.
+- `src/types/supabase.ts` régénéré (`gen types --remote`, CLI) après la
+  migration trips ; la purge étant data-only, rien à regénérer ensuite.
+  66 tests vitest, lint (warnings préexistants seuls), build — au vert.
+- Session suivante (M10) : les marqueurs à reconnaître dans
+  `repositories/errors.ts` sont `TRIP_KM_ORDER`, `TRIP_DATE_ORDER`,
+  `TRIP_RELAY_CONFLICT`, `TRIP_IMMUTABLE`, `TRIP_ADMIN_ONLY` (+ les
+  existants `KM_REGRESSION`, `KM_IMMUTABLE`, `permission`…). Attention :
+  `is_admin()`/`auth.uid()` en trigger → SQL P0001 avec le message en
+  préfixe, comme les triggers existants. La **levée d'annulation est un
+  seul UPDATE sur trips** (le trigger restaure le départ tout seul) —
+  `restoreTrip` d'une sortie annulée n'est pas « trois écritures » ; la
+  restauration par agrégat d'une sortie supprimée reste deux UPDATE sur
+  kilometers (départ puis arrivée, chacun sous D18). `deleteTrip` = deux
+  soft-dletes de relevés, jamais d'écriture sur trips. Le rejeu offline
+  d'une ouverture se reconnaît à `unique_violation` sur
+  `trips_start_reading_id_key` (déjà ouverte) et d'une annulation
+  replayable = UPDATE idempotent côté trigger. Le relais se pilote
+  simplement : insérer `trips` avec son nouveau relevé de départ — le
+  serveur clôture l'ancienne sortie ou refuse typé. Véhicule Dev et compte
+  `m5-test` conservés (décision session, utile aux vérifications M11).
 
 ## Milestone 10 — Sorties : client ⬜
 
@@ -609,11 +682,9 @@ Notes :
 - La whitelist d'emails Supabase s'applique aussi à OAuth Google — à tester
   explicitement au milestone 3.
 - Ne jamais embarquer la clé `service_role` dans le bundle (repo public).
-- Réalignement migrations locales ↔ distantes : **le CLI est installé le
-  2026-11-27** (`supabase@^3.4.0` en devDependency, invocation `npx
-  supabase`, v3.4.0 vérifié ; session authentifiée `jonathan@dokat.fr`
-  vérifiée par `whoami`). Le réalignement reste dû et devient **exigeable** :
-  c'est la tâche 0 du milestone 9 (les historiques distant — entrées
-  `apply_migration` M2→M6 — et local — fichiers horodatés — ne se
-  connaissent pas ; `db push` sans repair préalable rejouerait tout). `gen
-  types` et `db query` ne dépendent pas de ce réalignement.
+- Réalignement migrations locales ↔ distantes : **fait à la session M9
+  (2026-11-27)** — repair `applied` des 10 fichiers + repair `reverted` des
+  doublons `apply_migration`, puis trois nouvelles migrations poussées par
+  CLI (`db push`). L'historique distant porte exactement les fichiers du
+  repo ; la dette est soldée, toute nouvelle migration se fait par CLI.
+  Contrôle rapide : `npx supabase db push --dry-run --remote` → `upToDate`.

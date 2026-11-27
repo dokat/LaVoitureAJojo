@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: '14.18'
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       kilometers: {
@@ -102,6 +127,55 @@ export type Database = {
         }
         Relationships: []
       }
+      trips: {
+        Row: {
+          cancelled_at: string | null
+          created_at: string
+          end_reading_id: string | null
+          id: string
+          start_reading_id: string
+          vehicle_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          created_at?: string
+          end_reading_id?: string | null
+          id?: string
+          start_reading_id: string
+          vehicle_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          created_at?: string
+          end_reading_id?: string | null
+          id?: string
+          start_reading_id?: string
+          vehicle_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'trips_end_reading_id_fkey'
+            columns: ['end_reading_id']
+            isOneToOne: true
+            referencedRelation: 'kilometers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'trips_start_reading_id_fkey'
+            columns: ['start_reading_id']
+            isOneToOne: true
+            referencedRelation: 'kilometers'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'trips_vehicle_id_fkey'
+            columns: ['vehicle_id']
+            isOneToOne: false
+            referencedRelation: 'vehicles'
+            referencedColumns: ['id']
+          },
+        ]
+      }
       vehicles: {
         Row: {
           brand: string
@@ -135,6 +209,10 @@ export type Database = {
     }
     Functions: {
       is_admin: { Args: never; Returns: boolean }
+      trip_assert_order: {
+        Args: { p_end: string; p_relay: boolean; p_start: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
@@ -260,6 +338,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
