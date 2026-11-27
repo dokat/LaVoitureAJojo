@@ -454,6 +454,18 @@ Notes :
 
 Contrat : D30-D40. Ce que la session doit produire, tout côté base :
 
+- [ ] **Tâche 0 — réalignement migrations locales ↔ distante** (dette rendue
+      exigeante par l'installation du CLI, voir Dette) : créer
+      `supabase/config.toml` (`npx supabase init`, ou à la main avec le
+      `project_id` extrait de `VITE_SUPABASE_URL`), `npx supabase link
+      --project-ref <ref>`, puis `npx supabase migration repair --status
+      applied <version>` pour chaque fichier de `supabase/migrations/` (la
+      table `schema_migrations` distante ignore nos noms horodatés — elle
+      porte les entrées de `apply_migration` M2→M6). Vérifier avec
+      `npx supabase db pull --dry-run` : aucune diff de schéma attendue.
+      **Pas de `db push` avant** : il rejouerait tout et échouerait.
+      Alternative si repair coince : `db pull` (v3 consigne l'historique à la
+      volée) puis trier les fichiers.
 - [ ] Migration `trips` : `id`, `vehicle_id → vehicles`, `start_reading_id →
       kilometers` (NOT NULL), `end_reading_id → kilometers` (NULL = en cours),
       `cancelled_at` (NULL), `created_at` ; UNIQUE sur `start_reading_id` ET
@@ -494,14 +506,23 @@ Contrat : D30-D40. Ce que la session doit produire, tout côté base :
       annulation → départ invisible de la chronologie ; levée d'annulation
       avec D6 revenue = refus ; restauration par agrégat (D37) ; index une
       sortie ouverte ; purge = tables vides vérifiée dans un rollback
-- [ ] `src/types/supabase.ts` régénéré avec l'outil MCP Supabase
-      `generate_typescript_types` (client serverless, pas de CLI — la dette
-      `db pull` n'est pas un prérequis ; cf. doc Generating Types et D24) —
-      sinon M10 typecheck à l'aveugle
+- [ ] Régénération (D24) : `npx supabase gen types typescript --linked`
+      (CLI installé le 2026-11-27 en devDependency, invocation via `npx`) ou
+      outil MCP `generate_typescript_types` — les deux lisent le schéma réel,
+      la dette de réalignement des migrations ne bloque **pas** la génération,
+      seulement `db push` (cf. tâche 0 et Dette) ; sinon M10 typecheck à
+      l'aveugle
 
 Prérequis : milestones 2-7 (la base actuelle est en prod) ; sauvegarde
 exportée des `kilometers` avant la purge D40 (dump SQL via dashboard —
 l'écart à D7 est acté, pas une raison pour ne pas avoir de filet le jour J).
+
+Choix de l'outil (consigne produit 2026-11-27) : **MCP ou CLI, au plus
+pratique pour chaque opération** — le CLI n'impose pas de tout basculer sur
+lui, le MCP n'interdit pas le CLI. Contrainte de cohérence seulement :
+`db push` CLI exige la tâche 0 faite ; appliquer une migration par MCP
+`apply_migration` est toujours possible mais creuse l'écart d'historiques
+(la tâche 0 devra l'intégrer). `gen types` : les deux, indifféremment.
 
 Notes :
 
@@ -588,8 +609,11 @@ Notes :
 - La whitelist d'emails Supabase s'applique aussi à OAuth Google — à tester
   explicitement au milestone 3.
 - Ne jamais embarquer la clé `service_role` dans le bundle (repo public).
-- Réalignement migrations locales ↔ distantes (`supabase db pull`) reporté
-  par la session milestone 8 (CLI absent) : toujours dû. Les migrations M6
-  (D27) ont été appliquées via MCP `apply_migration` comme celles de M2 — le
-  nom local horodaté et l'entrée distante diffèrent, sans impact tant que le
-  CLI n'est pas utilisé ; à traiter avant le premier usage du CLI.
+- Réalignement migrations locales ↔ distantes : **le CLI est installé le
+  2026-11-27** (`supabase@^3.4.0` en devDependency, invocation `npx
+  supabase`, v3.4.0 vérifié ; session authentifiée `jonathan@dokat.fr`
+  vérifiée par `whoami`). Le réalignement reste dû et devient **exigeable** :
+  c'est la tâche 0 du milestone 9 (les historiques distant — entrées
+  `apply_migration` M2→M6 — et local — fichiers horodatés — ne se
+  connaissent pas ; `db push` sans repair préalable rejouerait tout). `gen
+  types` et `db query` ne dépendent pas de ce réalignement.
