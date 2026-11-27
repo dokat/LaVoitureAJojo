@@ -12,6 +12,14 @@ export type DataErrorCode =
   | 'not_found' // ligne absente ou aucun véhicule actif
   | 'network' // supabase-js n'a pas atteint le serveur
   | 'photo_upload' // relevé inséré, octets photo non partis (D16)
+  // Marqueurs des triggers `trips` (M9 → M10, D33→D36) :
+  | 'trip_km_order' // clôture D34 : km arrivée < km départ
+  | 'trip_date_order' // clôture D34 : date arrivée < date départ
+  | 'trip_relay_conflict' // relais D35 refusé (km ou date en retrait)
+  | 'trip_already_open' // rejeu : ce relevé ouvre déjà une sortie (UNIQUE D30)
+  | 'trip_concurrent_open' // course D35 : index une sortie ouverte
+  | 'trip_immutable' // D33 : départ/id figés, sortie clôturée non réouvrable
+  | 'trip_admin_only' // levée d'annulation réservée à l'admin (D36)
   | 'unknown'
 
 export class DataError extends Error {
@@ -21,6 +29,28 @@ export class DataError extends Error {
     super(message, { cause })
     this.name = 'DataError'
     this.code = code
+  }
+}
+
+/** Codes propres à l'agrégat sortie (D33→D36) ; les erreurs génériques
+ * (réseau, RLS, inconnue) restent des DataError simples. */
+export type TripErrorCode =
+  | 'trip_km_order'
+  | 'trip_date_order'
+  | 'trip_relay_conflict'
+  | 'trip_already_open'
+  | 'trip_concurrent_open'
+  | 'trip_immutable'
+  | 'trip_admin_only'
+
+/** Erreur d'une écriture `trips` (ou de sa contagion sur `kilometers`).
+ * C'est une DataError : les appelants existants (instanceof, .code) marchent. */
+export class TripError extends DataError {
+  declare readonly code: TripErrorCode
+
+  constructor(code: TripErrorCode, message: string, cause?: unknown) {
+    super(code, message, cause)
+    this.name = 'TripError'
   }
 }
 
@@ -39,6 +69,24 @@ const MESSAGES: Record<DataErrorCode, string> = {
   photo_upload:
     'Relevé enregistré, mais la photo n\u2019a pas pu être envoyée : le ' +
     'relevé reste visible sans photo.',
+  trip_km_order:
+    'Le compteur d\u2019arrivée est plus bas que celui du départ : une sortie ' +
+    'ne peut pas finir sous son point de départ (règle D34).',
+  trip_date_order:
+    'La date d\u2019arrivée est antérieure à celle du départ : une sortie se ' +
+    'clôt après son ouverture (règle D34).',
+  trip_relay_conflict:
+    'Ce relevé ne peut pas clôturer la sortie en cours (compteur ou date en ' +
+    'retrait) : vérifiez le compteur, ou demandez à l\u2019admin (D35).',
+  trip_already_open:
+    'Ce relevé ouvre déjà une sortie en base (rejeu reconnu, D30).',
+  trip_concurrent_open:
+    'Une sortie vient de s\u2019ouvrir entre-temps : rechargez et recommencez ' +
+    '(course du relais, D35).',
+  trip_immutable:
+    'Une sortie ne s\u2019édite pas : annuler puis redémarrer, ou supprimer ' +
+    'puis ressaisir en rétroactif (D33).',
+  trip_admin_only: 'Lever une annulation est réservé à l\u2019admin (D36).',
   unknown: 'Erreur inattendue côté base de données.',
 }
 
@@ -46,6 +94,11 @@ function message(code: DataErrorCode, original?: string): string {
   return code === 'unknown' && original
     ? `${MESSAGES[code]} (${original})`
     : MESSAGES[code]
+}
+
+/** Fabrique d'erreur sortie : message FR figé par le code (D33→D36). */
+function trip(code: TripErrorCode, cause?: unknown): TripError {
+  return new TripError(code, MESSAGES[code], cause)
 }
 
 /** Convertit n'importe quoi (erreur Supabase, ZodError, exception JS) en DataError. */
@@ -74,6 +127,21 @@ export function toDataError(error: unknown): DataError {
     return new DataError('km_regression', message('km_regression'), error)
   if (raw.includes('KM_IMMUTABLE'))
     return new DataError('km_immutable', message('km_immutable'), error)
+  // Marqueurs des triggers `trips` (M9) — même patron P0001 (notes M9).
+  if (raw.includes('TRIP_RELAY_CONFLICT'))
+    return trip('trip_relay_conflict', error)
+  if (raw.includes('TRIP_KM_ORDER')) return trip('trip_km_order', error)
+  if (raw.includes('TRIP_DATE_ORDER')) return trip('trip_date_order', error)
+  if (raw.includes('TRIP_ADMIN_ONLY')) return trip('trip_admin_only', error)
+  if (raw.includes('TRIP_IMMUTABLE')) return trip('trip_immutable', error)
+  // Violations de contrainte connues de `trips` (23505) : le rejeu hors-ligne
+  // d'une ouverture (D39) et la course du relais (D35) se reconnaissent là.
+  if (err?.code === '23505') {
+    if (raw.includes('trips_start_reading_id_key'))
+      return trip('trip_already_open', error)
+    if (raw.includes('trips_one_open_per_vehicle'))
+      return trip('trip_concurrent_open', error)
+  }
   // Violation RLS (WITH CHECK) ou tentative sur véhicule non actif.
   if (err?.code === '42501' || raw.includes('row-level security')) {
     return new DataError('permission', message('permission'), error)

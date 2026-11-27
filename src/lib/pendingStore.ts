@@ -10,6 +10,17 @@ import { DataError } from '@/repositories/errors'
 
 export type PendingStatus = 'pending' | 'conflict'
 
+/**
+ * Intention d'un item (D39) : `reading` est le cas né au M7 (relevé seul) ;
+ * `tripOpen` ouvre une sortie (les champs de base portent le relevé de DÉPART,
+ * les champs `end*` l'arrivée éventuelle d'une rétro-saisie D31) ; `tripClose`
+ * clôt la sortie `tripId` (les champs de base portent alors le relevé
+ * d'ARRIVÉE) ; `tripCancel` annule la sortie `tripId` (aucun relevé — les
+ * champs de base sont des sentinels que le synchroniseur ignore).
+ * Absent = `reading` : les items nés avant le M10 gardent leur sémantique.
+ */
+export type PendingIntent = 'reading' | 'tripOpen' | 'tripClose' | 'tripCancel'
+
 /** Un relevé en attente de synchro. `readingAt` porte la sémantique D14 :
  * l'horodatage de la manipulation utilisateur, figé à la saisie, pas à l'envoi. */
 export type PendingReading = {
@@ -34,9 +45,25 @@ export type PendingReading = {
   /** Message du dernier échec (affiché avec le badge « conflit », D13). */
   lastError: string | null
   /** Étape de reprise (D25 inversé) : si l'insertion a réussi mais pas
-   * l'upload photo, on ne réinsère jamais — on reprend à l'upload. */
+   * l'upload photo, on ne réinsère jamais — on reprend à l'upload. Pour une
+   * intention sortie, ces deux champs portent l'extrémité principale de
+   * l'item : départ (`tripOpen`) ou arrivée (`tripClose`). */
   insertedReadingId: string | null
   uploadedPhotoPath: string | null
+  /** Intention sortie (D39) ; undefined = `reading` (items nés au M7). */
+  intent?: PendingIntent
+  /** Sortie : cible pour `tripClose`/`tripCancel` (figée à la mise en file),
+   * ligne déjà insérée pour `tripOpen` (marqueur de reprise D39). */
+  tripId?: string | null
+  /** Extrémité arrivée d'une ouverture rétroactive (D31) — null/absent sinon. */
+  endKm?: number | null
+  endReadingAt?: string | null
+  endFuelPercent?: number | null
+  endNotes?: string | null
+  endPhoto?: Blob | null
+  /** Marqueurs de reprise propres à `tripOpen` (D39, même loi que ci-dessus). */
+  insertedEndReadingId?: string | null
+  uploadedEndPhotoPath?: string | null
 }
 
 export type NewPendingReading = Omit<
@@ -48,6 +75,8 @@ export type NewPendingReading = Omit<
   | 'lastError'
   | 'insertedReadingId'
   | 'uploadedPhotoPath'
+  | 'insertedEndReadingId'
+  | 'uploadedEndPhotoPath'
 >
 
 const DB_NAME = 'lavoitureajojo'

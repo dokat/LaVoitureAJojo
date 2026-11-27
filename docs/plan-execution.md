@@ -16,7 +16,7 @@ pièges, consignes pour la session suivante).
 | 7   | Offline / PWA       | ✅ terminé        |
 | 8   | CI & déploiement    | ✅ terminé        |
 | 9   | Sorties — base SQL  | ✅ terminé        |
-| 10  | Sorties — client    | ⬜ à venir        |
+| 10  | Sorties — client    | ✅ terminé        |
 | 11  | Sorties — UI        | ⬜ à venir        |
 
 ## Milestone 1 — Scaffold ✅
@@ -601,36 +601,36 @@ Notes :
   serveur clôture l'ancienne sortie ou refuse typé. Véhicule Dev et compte
   `m5-test` conservés (décision session, utile aux vérifications M11).
 
-## Milestone 10 — Sorties : client ⬜
+## Milestone 10 — Sorties : client ✅
 
 Contrat : D30-D39 côté TypeScript. Rien d'visible à l'écran (l'UI reste en
 M11), mais `npm run build`/`lint`/`test` au vert sur les nouvelles couches.
 
-- [ ] Schéma zod `src/schemas/trips.ts` (D26) : ligne PostgREST → forme
+- [x] Schéma zod `src/schemas/trips.ts` (D26) : ligne PostgREST → forme
       domaine `Trip` (camelCase, `startedAt`/`endedAt` dérivés des relevés,
-      `distanceKm` dérivée — ou laissée au hook, trancher en session)
-- [ ] `tripsRepository` : `fetchTrips(vehicleId)`, `openTrip` (insère le ou les
+      `distanceKm` dérivée — ou laissée au hook, tranché en session : hook)
+- [x] `tripsRepository` : `fetchTrips(vehicleId)`, `openTrip` (insère le ou les
       relevés puis la ligne — dans l'ordre qui respecte UNIQUE et D34),
-      `closeTrip`, `cancelTrip`, `restoreTrip` (D37 : les trois écritures),
-      `deleteTrip` (soft-delete des deux relevés). Seule couche qui parle
-      supabase-js (D10) ; erreurs trigger → `TripError` typées, messages FR
-- [ ] `kilometersRepository` : étendre le mapping si les jointures `trips`
-      remontent les relevés par sortie ; les lectures existantes (liste,
-      `includeDeleted`) ne bougent pas — l'historique par sortie se construit
-      côté hook en joignant par id, pas en complexifiant le repo
-- [ ] Hook `useTrips(vehicleId)` : sortie en cours (`openTrip` dérivé),
+      `closeTrip`, `cancelTrip`, `restoreTrip` (D37 : branches réelles, cf.
+      notes), `deleteTrip` (soft-delete des deux relevés). Seule couche qui
+      parle supabase-js (D10) ; erreurs trigger → `TripError` typées, messages FR
+- [x] `kilometersRepository` : aucune extension nécessaire — la jonction
+      sorties↔relevés est décidée côté hook ; les lectures existantes (liste,
+      `includeDeleted`) ne bougent pas
+- [x] Hook `useTrips(vehicleId)` : sortie en cours (`openTrip` dérivé),
       liste enrichie des relevés, `startTrip` (dont rétroactif D31),
       `completeTrip`, `cancelTrip`, `deleteTrip`, `restoreTrip` ; branché sur
       `useOdometerValidation` pour les validations AVANT envoi (D6 reste
       l'UX, la base la vérité) + règle interne D34 re-jouée côté client
-- [ ] Offline (D39) : l'item de file gagne un champ d'intention
-      (`tripOpen` / `tripClose` + relevés) ; le synchroniseur rejoue
-      lecture(s) puis écriture `trips`, idempotent sur `insertedReadingId` ;
+      (`validateTripOrder` pur)
+- [x] Offline (D39) : l'item de file gagne un champ d'intention
+      (`tripOpen` / `tripClose` / `tripCancel` + relevés) ; le synchroniseur
+      rejoue lecture(s) puis écriture `trips`, idempotent sur les marqueurs ;
       le relais est une simple insertion qui réussit — pas de branche
       « conflit » dédiée, conflit uniquement sur erreur déterministe ;
       écran/indicateur de file existants mentionnent l'intention sortie
-- [ ] Tests vitest (D23) : relais avec même relevé, ouverture rétroactive,
-      annulation = 2 écritures cohérentes, restauration agrégat, file offline
+- [x] Tests vitest (D23) : relais avec même relevé, ouverture rétroactive,
+      annulation = écritures cohérentes, restauration agrégat, file offline
       `tripOpen`/`tripClose` en reprise de coupure ; les fixtures mockent
       `tripsRepository` à sa frontière
 
@@ -638,7 +638,74 @@ Prérequis : milestone 9 appliqué sur le projet Supabase.
 
 Notes :
 
-- (à remplir par la session M10)
+- Tranchage du plan « distanceKm dérivée — ou laissée au hook » : **le hook**.
+  `schemas/trips.ts` ne décrit que la ligne de liaison (D30 — un `trip` ne
+  porte ni km ni date) ; `useTrips` joint par id et expose `TripEntry`
+  (`trip` + `startReading` + `endReading` + `distanceKm` + `isOpen`). Les
+  dates d'une sortie sont celles de ses relevés : aucune dérive à figer ici.
+- Architecture nouvelle : `hooks/tripSync.ts` = **l'algo de synchro sortie**
+  (étapes idempotentes + marqueurs de reprise), partagé par le moteur de la
+  file et les actions en ligne de `useTrips` — une seule implémentation de
+  D39, la persistance des marqueurs change seule (store IndexedDB vs mémoire).
+  `tripsRepository.openTrip(input, onProgress)` expose ses étapes au même
+  titre ; le rejeu d'insertion est réconcilié en interne (`trip_already_open`
+  retrouvé par `getTripByStartReading`) — jamais de doublon (D29).
+- `repositories/errors.ts` : `TripError extends DataError` (les appelants
+  `instanceof DataError` / `.code` marchent sans changement), 7 codes
+  `trip_*`, messages FR. Marques reconnus : les 5 attendus (notes M9) **plus**
+  les 23505 nommés `trips_start_reading_id_key` (rejeu) et
+  `trips_one_open_per_vehicle` (course du relais → `trip_concurrent_open`).
+- File hors-ligne : les champs d'intention sont **optionnels** sur
+  `PendingReading` (absent = `reading`, les items nés au M7 gardent leur
+  sémantique) et l'IndexedDB ne change pas de version (objets plats). Un item
+  ne sort de la file que TOUT étant passé (relevés, ligne, photos) — les
+  photos en échec gardent l'item `pending` (D13, pas de perte silencieuse).
+  `tripCancel` : UPDATE idempotent, aucun relevé — ses km/date de base sont
+  des sentinelles ignorées (l'UI doit brancher sur l'intention, fait dans
+  `PendingPage`).
+- `restoreTrip` (D37) — le « trois écritures » du plan n'est pas littéral,
+  conformément aux notes M9 : sortie **annulée** = UN UPDATE `trips` (levée,
+  le trigger restaure le départ sous D18) ; sortie **supprimée** = deux
+  UPDATE `kilometers` (départ puis arrivée), la ligne trips n'a jamais bougé.
+  La branche vit dans le repository, figée par test. `deleteTrip` = deux
+  soft-deletes, **aucune écriture sur trips** (vérifié : zéro appel supabase
+  dans le test) ; refuser deleteTrip sur une sortie en cours (elle s'annule).
+- `startTrip` valide dans l'ordre : D6 (départ puis arrivée contre le dernier
+  relevé vivant — c'est exactement ce que fera le trigger à chaque insert),
+  D34 entre les deux extrémités, puis **relais client** : si une sortie
+  ouverte est chargée, son départ sert d'appui à D34 (refus
+  `trip_relay_conflict` avant envoi, jamais de blocage silencieux, D35) — si
+  le départ n'est pas chargé (filtre, course), le trigger tranche. Une
+  régression D6 ne met **jamais** en file (test M7 inchangé, esprit D29).
+- Coupure en plein vol : le marqueur connu au moment de l'erreur réseau part
+  dans l'item (`insertedReadingId`/`insertedEndReadingId`/`tripId`) — le
+  renvoi reprend à l'étape suivante. Erreur déterministe APRÈS ligne insérée
+  (photo seule en échec) : `{ ok: true, photoError }` (esprit D25), la sortie
+  reste. Si la ligne `trips` est refusée après insertions de relevés (course
+  D6), des relevés orphelins restent en base : la liste est relue, la
+  correction est du ressort admin (soft-delete) — cas non traité en v1.
+- `deleteTrip`/`restoreTrip` restent **en ligne seulement** : D39 ne liste
+  que ouvrir/clôturer/annuler/relayer hors-ligne.
+- `useReadings.addReading` est intact : M11 retirera la saisie directe de
+  l'UI (D31), le repository et le hook restent (lecture de la chronologie,
+  graphique, file `reading` des anciens items).
+- Piège de fixture (connu M5, encore vrai) : tout id de relevé renvoyé par un
+  mock doit être un **UUID v4 valide**, sinon `tripRowSchema.parse` (D26)
+  lève et le test échoue pour la mauvaise raison.
+- 131 tests vitest (66 → +65 : schéma, erreurs, séquences du repo avec un
+  stub thenable de `lib/supabase`, hook, moteur de file), lint (warnings
+  shadcn préexistants seuls), build — au vert. **Aucune vérification en
+  réel** : rien de visible à l'écran avant M11 (le contrat de la session).
+- Session suivante (M11) : `useTrips(vehicleId)` est l'entrée unique — carte
+  « Sortie en cours » via `openTrip` dérivé (bouton Terminer =
+  `completeTrip(trip.id, end)`), formulaire Démarrer = `startTrip({start,
+end?})` avec repli rétroactif (D31), confirmation du relais AVANT envoi
+  (detection : `openTrip` non null et auteur ≠ soi — l'alerte est à câbler,
+  les données sont là) ; historique = `entries` (départ → arrivée, distance,
+  badges) ; toggle admin = recharger avec les morts, déjà pris en charge par
+  le hook (`listReadings(..., { includeDeleted: true })` au chargement de
+  `useTrips`). L'écran de file affiche déjà
+  l'intention de chaque item. Véhicule Dev et compte `m5-test` conservés.
 
 ## Milestone 11 — Sorties : UI ⬜
 

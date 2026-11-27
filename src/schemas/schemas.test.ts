@@ -7,9 +7,11 @@ import { ZodError } from 'zod'
 import type { Reading } from '@/schemas/kilometers'
 import type { Vehicle } from '@/schemas/vehicles'
 import type { Profile, ProfileRole } from '@/schemas/profiles'
+import type { Trip } from '@/schemas/trips'
 import { readingRowSchema } from '@/schemas/kilometers'
 import { vehicleRowSchema } from '@/schemas/vehicles'
 import { profileRowSchema, dbProfileRoleSchema } from '@/schemas/profiles'
+import { tripRowSchema } from '@/schemas/trips'
 
 // UUIDs valides (version 4, variante 10xx) : z.uuid() vérifie les bits.
 const UUID_A = '11111111-1111-4111-8111-111111111111'
@@ -89,6 +91,51 @@ describe('vehicleRowSchema (vehicles → Vehicle)', () => {
       plate: 'AB-123-CD',
       isActive: true,
     })
+  })
+})
+
+describe('tripRowSchema (trips → Trip, D30)', () => {
+  const UUID_D = '44444444-4444-4444-8444-444444444444'
+  const tripRow = (overrides: Record<string, unknown> = {}) => ({
+    id: UUID_A,
+    vehicle_id: UUID_B,
+    start_reading_id: UUID_C,
+    end_reading_id: null,
+    cancelled_at: null,
+    created_at: '2026-11-27T09:00:00.000000+00:00',
+    ...overrides,
+  })
+
+  it('convertit la ligne de liaison en sortie domaine (snake → camel, ISO → Date)', () => {
+    const trip: Trip = tripRowSchema.parse(tripRow({ end_reading_id: UUID_D }))
+    expect(trip).toEqual({
+      id: UUID_A,
+      vehicleId: UUID_B,
+      startReadingId: UUID_C,
+      endReadingId: UUID_D,
+      cancelledAt: null,
+      createdAt: new Date('2026-11-27T09:00:00Z'),
+    })
+    expect(trip.createdAt).toBeInstanceOf(Date)
+  })
+
+  it('end_reading_id NULL = sortie en cours (D30)', () => {
+    expect(tripRowSchema.parse(tripRow()).endReadingId).toBeNull()
+  })
+
+  it('cancelled_at porte la trace d’annulation en Date (D36)', () => {
+    const trip = tripRowSchema.parse(
+      tripRow({ cancelled_at: '2026-11-27T10:00:00Z' }),
+    )
+    expect(trip.cancelledAt).toEqual(new Date('2026-11-27T10:00:00Z'))
+  })
+
+  it.each([
+    ['départ manquant (NOT NULL D30)', { start_reading_id: null }],
+    ['uuid invalide', { vehicle_id: 'pas-un-uuid' }],
+    ['created_at non ISO', { created_at: '27/11/2026' }],
+  ])('rejette : %s', (_name, overrides) => {
+    expect(() => tripRowSchema.parse(tripRow(overrides))).toThrow(ZodError)
   })
 })
 

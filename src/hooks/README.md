@@ -1,9 +1,11 @@
 # hooks/
 
 Logique métier réutilisable : `useAuth`, `useReadings` (chronologie + filtres
-admin), `useOdometerValidation` (règle anti-recul), `useVehicles` (flotte,
-bascule et infos — admin), `useProfiles` (libellés utilisateurs),
-`usePhotoUrl`, `usePendingQueue` (file hors-ligne)…
+admin), `useTrips` (sorties : liste enrichie, ouvrir/clôturer/annuler,
+validations D6/D34 avant envoi), `useOdometerValidation` (règle anti-recul),
+`useVehicles` (flotte, bascule et infos — admin), `useProfiles` (libellés
+utilisateurs), `usePhotoUrl`, `usePendingQueue` (file hors-ligne, intentions
+relevé et sortie — `tripSync` porte l'algo de reprise partagé)…
 
 Règles :
 

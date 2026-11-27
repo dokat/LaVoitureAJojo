@@ -1,8 +1,9 @@
 # repositories/
 
 Accès base de données : un module par agrégat (`kilometersRepository`,
-`vehiclesRepository`, `profilesRepository`, `photosRepository` pour le
-storage) ; `errors.ts` centralise la conversion en `DataError` typées.
+`vehiclesRepository`, `profilesRepository`, `tripsRepository`,
+`photosRepository` pour le storage) ; `errors.ts` centralise la conversion en
+`DataError` typées (et `TripError` pour les marqueurs sortie).
 
 Règles :
 

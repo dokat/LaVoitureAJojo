@@ -12,7 +12,11 @@ const navItemClass =
   'aria-[current=page]:font-medium aria-[current=page]:text-foreground'
 
 export function AppShell() {
-  const { count, conflicts, online } = usePendingQueue()
+  const { items, count, conflicts, online } = usePendingQueue()
+  // D39 : la file porte aussi des intentions sortie — l'indicateur le dit.
+  const tripCount = items.filter(
+    (item) => (item.intent ?? 'reading') !== 'reading',
+  ).length
   return (
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
@@ -38,6 +42,9 @@ export function AppShell() {
                 )}
               >
                 {count} en attente
+                {tripCount > 0
+                  ? ` · ${tripCount} sortie${tripCount > 1 ? 's' : ''}`
+                  : ''}
               </Link>
             )}
             <NavLink

@@ -39,7 +39,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { usePendingQueue } from '@/hooks/usePendingQueue'
-import type { PendingReading } from '@/hooks/usePendingQueue'
+import type { PendingIntent, PendingReading } from '@/hooks/usePendingQueue'
 import { compressPhoto } from '@/lib/images'
 import {
   formatDateTime,
@@ -234,14 +234,34 @@ function EditDialog({ item }: { item: PendingReading }) {
   )
 }
 
+// D39 : un item de file peut porter une INTENTION sortie, pas seulement un
+// relevé. Le libellé branching est la part M10 de l'écran ; le formulaire de
+// sortie complet (ouverture, clôture, relais confirmé) est le sujet du M11.
+const INTENT_LABEL: Record<PendingIntent, string> = {
+  reading: 'Relevé',
+  tripOpen: 'Sortie — ouverture',
+  tripClose: 'Sortie — clôture',
+  tripCancel: 'Sortie — annulation',
+}
+
+const intentOf = (item: PendingReading): PendingIntent =>
+  item.intent ?? 'reading'
+
 function PendingRow({ item }: { item: PendingReading }) {
   const { discardItem } = usePendingQueue()
+  const intent = intentOf(item)
   return (
     <Card>
       <CardHeader>
         <div className="flex items-baseline justify-between gap-2">
           <CardTitle className="text-2xl tabular-nums">
-            {formatKm(item.km)} km
+            {intent === 'tripCancel' ? (
+              <span className="text-base font-medium">
+                Annulation de sortie
+              </span>
+            ) : (
+              `${formatKm(item.km)} km`
+            )}
           </CardTitle>
           {item.status === 'conflict' ? (
             <Badge variant="destructive">En attente — conflit</Badge>
@@ -249,9 +269,28 @@ function PendingRow({ item }: { item: PendingReading }) {
             <Badge variant="secondary">En attente</Badge>
           )}
         </div>
+        {intent !== 'reading' && (
+          <CardDescription className="text-xs font-medium">
+            {INTENT_LABEL[intent]}
+          </CardDescription>
+        )}
         <CardDescription>
-          Relevé du {formatDateTime(new Date(item.readingAt))} · en file depuis
-          le {formatDateTime(new Date(item.createdAt))}
+          {intent === 'tripCancel' ? (
+            <>
+              Annulation · en file depuis le{' '}
+              {formatDateTime(new Date(item.createdAt))}
+            </>
+          ) : (
+            <>
+              {intent === 'reading'
+                ? 'Relevé'
+                : intent === 'tripOpen'
+                  ? 'Départ'
+                  : 'Arrivée'}{' '}
+              du {formatDateTime(new Date(item.readingAt))} · en file depuis le{' '}
+              {formatDateTime(new Date(item.createdAt))}
+            </>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-2 text-sm text-muted-foreground">
@@ -260,10 +299,21 @@ function PendingRow({ item }: { item: PendingReading }) {
             {item.lastError}
           </p>
         )}
+        {intent === 'tripOpen' && item.endKm != null && item.endReadingAt && (
+          <p>
+            Arrivée prévue : {formatKm(item.endKm)} km du{' '}
+            {formatDateTime(new Date(item.endReadingAt))} (sortie née
+            rétroactive, D31).
+          </p>
+        )}
+        {intent === 'tripClose' && item.tripId && (
+          <p>Cet envoi clôturera la sortie ciblée à la synchronisation.</p>
+        )}
         {item.insertedReadingId && (
           <p>
-            Le relevé est déjà passé en base : seule la photo attend encore son
-            envoi.
+            {intent === 'reading'
+              ? 'Le relevé est déjà passé en base : seule la photo attend encore son envoi.'
+              : 'Le relevé associé est déjà passé en base : seule la suite attend le réseau.'}
           </p>
         )}
         {item.fuelPercent !== null && <p>Essence : {item.fuelPercent} %</p>}
@@ -271,7 +321,7 @@ function PendingRow({ item }: { item: PendingReading }) {
         <PhotoThumb photo={item.photo} />
       </CardContent>
       <CardFooter className="gap-2">
-        <EditDialog item={item} />
+        {intent !== 'tripCancel' && <EditDialog item={item} />}
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="ghost" size="sm" className="text-destructive">
@@ -280,11 +330,21 @@ function PendingRow({ item }: { item: PendingReading }) {
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Abandonner ce relevé ?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {intent === 'tripCancel'
+                  ? 'Abandonner cette annulation ?'
+                  : 'Abandonner ce relevé ?'}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                {formatKm(item.km)} km du{' '}
-                {formatDateTime(new Date(item.readingAt))} seront supprimés de
-                cet appareil sans être envoyés. Cette action est définitive.
+                {intent === 'tripCancel'
+                  ? 'La sortie restera ouverte (la demande d’annulation sera supprimée de cet appareil sans être envoyée). Cette action est définitive.'
+                  : `${formatKm(item.km)} km du ${formatDateTime(
+                      new Date(item.readingAt),
+                    )} seront supprimés de cet appareil sans être envoyés. ${
+                      intent === 'tripOpen'
+                        ? 'C’est l’ouverture de sortie entière qui sera abandonnée. '
+                        : ''
+                    }Cette action est définitive.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

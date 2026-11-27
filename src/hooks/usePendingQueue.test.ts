@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   insertReading: vi.fn(),
   uploadPhoto: vi.fn(),
   attachPhoto: vi.fn(),
+  openTrip: vi.fn(),
+  closeTrip: vi.fn(),
+  cancelTrip: vi.fn(),
 }))
 
 vi.mock('@/hooks/useAuth', () => ({
@@ -34,10 +37,23 @@ vi.mock('@/repositories/photosRepository', () => ({
   uploadPhoto: mocks.uploadPhoto,
   getSignedUrl: vi.fn(),
 }))
+// M10 (D39) : le moteur rejoue aussi les intentions sortie, via tripSync.
+vi.mock('@/repositories/tripsRepository', () => ({
+  fetchTrips: vi.fn(),
+  openTrip: mocks.openTrip,
+  closeTrip: mocks.closeTrip,
+  cancelTrip: mocks.cancelTrip,
+  insertTripRow: vi.fn(),
+  getTripByStartReading: vi.fn(),
+  restoreTrip: vi.fn(),
+  deleteTrip: vi.fn(),
+  liftTripCancellation: vi.fn(),
+  findOpenTrip: vi.fn(),
+}))
 
 import * as store from '@/lib/pendingStore'
 import type { NewPendingReading } from '@/lib/pendingStore'
-import { DataError } from '@/repositories/errors'
+import { DataError, toDataError, TripError } from '@/repositories/errors'
 import { usePendingQueue } from '@/hooks/usePendingQueue'
 
 const blob = { fake: 'jpeg' } as unknown as Blob
@@ -74,6 +90,37 @@ beforeEach(async () => {
   mocks.insertReading.mockResolvedValue({ id: 'r-new' })
   mocks.uploadPhoto.mockResolvedValue('u1/r-new.jpg')
   mocks.attachPhoto.mockResolvedValue(undefined)
+  // openTrip d'imitation : il RAPPORTE ses étapes (contrat du repo) puis
+  // rend une ligne — c'est ce qui alimente les marqueurs de reprise (D39).
+  mocks.openTrip.mockImplementation(
+    async (
+      input: {
+        vehicleId: string
+        end?: unknown
+        resume?: {
+          startReadingId?: string | null
+          endReadingId?: string | null
+        }
+      },
+      onProgress?: (p: unknown) => Promise<void> | void,
+    ) => {
+      const startReadingId = input.resume?.startReadingId ?? 'r-start'
+      const endReadingId =
+        input.resume?.endReadingId ?? (input.end ? 'r-end' : null)
+      await onProgress?.({ startReadingId, endReadingId, tripId: null })
+      await onProgress?.({ startReadingId, endReadingId, tripId: 't1' })
+      return {
+        id: 't1',
+        vehicleId: input.vehicleId,
+        startReadingId,
+        endReadingId,
+        cancelledAt: null,
+        createdAt: new Date('2026-11-27T09:00:00Z'),
+      }
+    },
+  )
+  mocks.closeTrip.mockResolvedValue({ id: 't1' })
+  mocks.cancelTrip.mockResolvedValue({ id: 't9' })
 })
 
 describe('usePendingQueue — renvoi d’un item en file', () => {
@@ -222,5 +269,205 @@ describe('usePendingQueue — actions utilisateur', () => {
     })
     expect(result.current.items).toHaveLength(0)
     expect(await store.load()).toHaveLength(0)
+  })
+})
+
+// ── Milestone 10 : intentions sortie (D39) ──────────────────────────────────
+
+const tripItem = (overrides: Partial<NewPendingReading>) =>
+  queuedItem(overrides)
+
+describe('usePendingQueue — intention tripOpen (D39)', () => {
+  it('relais sans branche dédiée : lecture puis ligne trips, item vidé', async () => {
+    // Qu'une sortie soit déjà ouverte ou non ne change RIEN côté client :
+    // le relais est une insertion qui réussit (D35/D39), le trigger closant
+    // l'ancienne sortie avec le MÊME relevé (preuve base : trips_test.sql).
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(tripItem({ intent: 'tripOpen' }))
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(0))
+    expect(mocks.openTrip).toHaveBeenCalledTimes(1)
+    expect(mocks.openTrip.mock.calls[0][0]).toMatchObject({
+      vehicleId: 'v1',
+      userId: 'u1',
+      start: { km: 50100, fuelPercent: null, notes: null },
+      end: null,
+    })
+    expect(result.current.conflicts).toBe(0)
+    // Le moteur de la file ne réinvente pas l'insertion du relevé : c'est
+    // openTrip (repository) qui pilote ses propres étapes.
+    expect(mocks.insertReading).not.toHaveBeenCalled()
+  })
+
+  it('ouverture rétroactive : l’arrivée voyage dans l’item (D31)', async () => {
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(
+        tripItem({
+          intent: 'tripOpen',
+          endKm: 50200,
+          endReadingAt: new Date('2026-11-26T18:00:00Z').toISOString(),
+          endNotes: 'retour',
+        }),
+      )
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(0))
+    expect(mocks.openTrip.mock.calls[0][0]).toMatchObject({
+      start: { km: 50100 },
+      end: { km: 50200, notes: 'retour' },
+    })
+  })
+
+  it('coupure en plein vol : le renvoi reprend aux marqueurs, jamais de doublon', async () => {
+    mocks.openTrip
+      .mockImplementationOnce(
+        async (
+          _input: unknown,
+          onProgress?: (p: unknown) => Promise<void> | void,
+        ) => {
+          await onProgress?.({
+            startReadingId: 'r-partial',
+            endReadingId: null,
+            tripId: null,
+          })
+          throw new DataError('network', 'connexion coupée')
+        },
+      )
+      .mockImplementation(async (input, onProgress) => {
+        const startReadingId = input.resume?.startReadingId ?? 'r-partial'
+        await onProgress?.({ startReadingId, endReadingId: null, tripId: 't1' })
+        return { id: 't1' }
+      })
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(tripItem({ intent: 'tripOpen' }))
+    })
+    await waitFor(() => expect(result.current.count).toBe(1))
+    expect(result.current.items[0]).toMatchObject({
+      status: 'pending',
+      insertedReadingId: 'r-partial',
+      tripId: null,
+    })
+
+    await act(async () => {
+      await result.current.syncNow()
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(0))
+    // Reprise : le second appel porte le marqueur — le relevé n'est jamais
+    // réinséré (D29 étendu).
+    expect(mocks.openTrip).toHaveBeenCalledTimes(2)
+    expect(mocks.openTrip.mock.calls[1][0]).toMatchObject({
+      resume: { startReadingId: 'r-partial', endReadingId: null },
+    })
+  })
+
+  it('photo du départ : upload sur l’id rapporté par openTrip, puis attach', async () => {
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(tripItem({ intent: 'tripOpen', photo: blob }))
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(0))
+    expect(mocks.uploadPhoto).toHaveBeenCalledWith('u1', 'r-start', blob)
+    expect(mocks.attachPhoto).toHaveBeenCalledWith('r-start', 'u1/r-new.jpg')
+  })
+
+  it('refus déterministe (relais D35) : badge conflit, item conservé', async () => {
+    mocks.openTrip.mockRejectedValue(
+      toDataError({
+        code: 'P0001',
+        message:
+          "TRIP_RELAY_CONFLICT: le relais échoue — vérifiez le compteur, ou demandez à l'admin (D35).",
+      }),
+    )
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(tripItem({ intent: 'tripOpen' }))
+    })
+    await waitFor(() => expect(result.current.conflicts).toBe(1))
+    expect(result.current.items[0].lastError).toMatch(/D35|compteur|admin/i)
+  })
+})
+
+describe('usePendingQueue — intentions tripClose et tripCancel (D39)', () => {
+  it('tripClose : arrivée insérée (D6 au renvoi) puis clôture de la sortie', async () => {
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(
+        tripItem({ intent: 'tripClose', tripId: 't1', km: 50200 }),
+      )
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(0))
+    expect(mocks.insertReading).toHaveBeenCalledWith(
+      expect.objectContaining({ vehicleId: 'v1', km: 50200 }),
+    )
+    expect(mocks.closeTrip).toHaveBeenCalledWith('t1', 'r-new')
+  })
+
+  it('tripClose en reprise : relevé déjà passé → seul le close repart', async () => {
+    mocks.closeTrip.mockRejectedValueOnce(
+      new DataError('network', 'Connexion au serveur impossible.'),
+    )
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(
+        tripItem({ intent: 'tripClose', tripId: 't1', km: 50200 }),
+      )
+    })
+    await waitFor(() => expect(result.current.count).toBe(1))
+    expect(result.current.items[0]).toMatchObject({
+      status: 'pending',
+      insertedReadingId: 'r-new',
+    })
+
+    await act(async () => {
+      await result.current.syncNow()
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(0))
+    // Le relevé d'arrivée n'est qu'inséré UNE fois ; le close est un UPDATE
+    // idempotent (rejeu à l'identique = no-op trigger, notes M9).
+    expect(mocks.insertReading).toHaveBeenCalledTimes(1)
+    expect(mocks.closeTrip).toHaveBeenCalledTimes(2)
+  })
+
+  it('tripClose refusé par D34 : conflit typé, rien n’est perdu', async () => {
+    mocks.closeTrip.mockRejectedValue(
+      new TripError('trip_km_order', 'TRIP_KM_ORDER: …'),
+    )
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(
+        tripItem({ intent: 'tripClose', tripId: 't1', km: 49000 }),
+      )
+    })
+    await waitFor(() => expect(result.current.conflicts).toBe(1))
+    expect(result.current.items[0].status).toBe('conflict')
+  })
+
+  it('tripCancel : un seul UPDATE idempotent, aucun relevé impliqué', async () => {
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(
+        tripItem({
+          intent: 'tripCancel',
+          tripId: 't9',
+          km: 0,
+          readingAt: new Date('2026-11-27T08:00:00Z').toISOString(),
+        }),
+      )
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(0))
+    expect(mocks.cancelTrip).toHaveBeenCalledWith('t9')
+    expect(mocks.insertReading).not.toHaveBeenCalled()
+    expect(mocks.openTrip).not.toHaveBeenCalled()
+  })
+
+  it('item tripClose sans sortie cible : conflit explicte, pas de crash', async () => {
+    const { result } = await mounted()
+    await act(async () => {
+      await store.add(tripItem({ intent: 'tripClose', tripId: null }))
+    })
+    await waitFor(() => expect(result.current.conflicts).toBe(1))
+    expect(mocks.closeTrip).not.toHaveBeenCalled()
   })
 })
