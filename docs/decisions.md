@@ -326,3 +326,133 @@ déterministe (D6, droits, véhicule actif absent) ⇒ `conflict` avec le messag
 de la base, éditable ou abandonnable (D13). Une régression D6 détectée par le
 client avant envoi **ne met jamais en file** : elle est refusée comme en ligne
 — la file n'accepte que l'incertitude du réseau, pas l'oubli de la chronologie.
+
+## 13. Modèle « sortie » (2026-11-27, session de grillage produit)
+
+Remplacement de la saisie brute par la **sortie** : une sortie = une saisie au
+départ puis une saisie à l'arrivée ; en cours tant que l'arrivée manque. Les
+décisions ci-dessous amendent/transposent D4-D7, D13-D14, D18-D19, D29 aux
+points cités ; tout le reste de ce qui précède reste en vigueur.
+
+### D30 — Définition et stockage de la sortie
+
+Nouvelle table `trips` (nom technique en base et en code ; **« sortie »**
+partout dans l'UI) : une sortie lie **deux relevés existants** de
+`kilometers` — `start_reading_id` (départ, non NULL) et `end_reading_id`
+(arrivée, NULL tant qu'en cours), plus `cancelled_at` (D36) et `created_at`.
+Le kilométrage n'est jamais stocké ailleurs : graphique, historique, RLS,
+soft-delete restent natifs de `kilometers` ; `trips` n'est qu'une couche de
+liaison (choix A du grillage — tout l'écosystème D6/D7/D13 survit sans
+réécriture). Contraintes : chaque relevé apparaît **au plus une fois** comme
+`start_reading_id` et **au plus une fois** comme `end_reading_id` (UNIQUE par
+colonne — c'est ce qui permet le partage du relais, D35).
+
+### D31 — Disparition de la saisie directe ; sortie rétroactive
+
+La saisie « hors sortie » disparaît de l'UI : tout passe par
+ouvrir/clôturer une sortie. Effet de bord assumé : plus de relevé
+« essence sans rouler » (cas d'usage absent du produit). Une sortie peut être
+**rétro-saisie** : au moment d'ouvrir, on peut renseigner départ **et** arrivée
+avec leurs dates (éditables, D14) → la sortie naît clôturée. La rétro-saisie
+de D6 survit donc, sous forme de sortie.
+
+### D32 — Champs par extrémité
+
+Photo, % essence et notes restent **par relevé**, optionnels aux deux
+extrémités (option A) : la photo du compteur au départ est le justificatif
+d'une sortie partagée, celle du retour la preuve du retour. Rien n'est
+ajouté au niveau `trips`.
+
+### D33 — Droits et immuabilité sur une sortie
+
+- **Clôturer** : l'auteur de la sortie (celui qui l'a ouverte) ou un admin.
+  Un membre ne clôture pas la sortie d'autrui (asymétrie assumée, l'admin
+  débloque).
+- **Annuler** (sortie en cours) : miroir exact — auteur ou admin.
+- **Supprimer** (sortie clôturée) : auteur (de celles qu'il a ouvertes) ou
+  admin ; l'action soft-delette **les deux relevés** (`deleted_by` =
+  l'exécutant) et la sortie disparaît de la chronologie par contagion.
+- **Aucune édition de km/date**, ni au départ ni à l'arrivée : D7/D19 en
+  vigueur — corriger = annuler + redémarrer, ou supprimer + ressaisir en
+  rétroactif (D31 le permet). Seuls `photo_path`, `notes`, `fuel_percent`
+  restent modifiables.
+
+### D34 — Règle chronologique transposée (amendement de D6)
+
+D6 s'applique à chaque relevé inséré comme avant (départ ≥ dernier relevé
+chronologique, rétro-saisie tolérée à date strictement antérieure). À la
+clôture s'ajoute une règle interne à la sortie, trigger SQL + message UI :
+`km_arrivée ≥ km_départ` **et** `date_arrivée ≥ date_départ` (égalités
+acceptées — sortie sans rouler possible).
+
+### D35 — Une seule sortie ouverte ; le relais
+
+Index partiel UNIQUE sur `trips(vehicle_id)` WHERE `end_reading_id IS NULL
+AND cancelled_at IS NULL` : une sortie ouverte à la fois par véhicule. Démarrer
+pendant qu'une sortie **oubliée** est ouverte déclenche le **relais** : le
+relevé de départ du nouveau venu clôt automatiquement la sortie en cours —
+le **même relevé** sert d'arrivée à l'ancienne sortie et de départ à la
+nouvelle (D30 ; compteur continu, somme des distances = distance réelle).
+Garde-fous : si le km ou la date du relais violent D34 (compteur lu plus bas
+que le départ oublié), **refus typé** avec message explicite (« vérifiez le
+compteur, ou demandez à l'admin ») — jamais de cap implicite. L'UI affiche une
+**confirmation explicite** avant envoi : « votre relevé clôturera la sortie en
+cours de X ».
+
+### D36 — Trace d'annulation
+
+Annuler = `trips.cancelled_at = now()` + soft-delete du relevé de départ
+(sinon un faux départ pollue la chronologie et bloque le véhicule via D6).
+Rien n'est purgé (esprit D7) : la sortie annulée est invisible par défaut,
+visible du seul toggle admin « voir les suppressions ». La levée
+d'annulation (admin) remet `cancelled_at` à NULL et restaure le départ, sous
+le recontrôle D18.
+
+### D37 — Restauration par agrégat
+
+L'unité de restauration est la **sortie**, plus le relevé pris seul :
+restaurer une sortie restaure ses deux relevés + la ligne `trips` (et défaire
+une annulation = restaurer le départ + lever `cancelled_at`). Un relevé
+orphelin (hors sortie) se restaure individuellement. Le trigger D6/D18
+recontrôle la chronologie à chaque restauration.
+
+### D38 — Affichage
+
+- **Historique** : liste **par sortie** — départ → arrivée, distance
+  (`km_end − km_start`), dates, auteur(s), badges offline/soft-delete
+  existants.
+- **Graphique** : inchangé — la chronologie native `kilometers` reste les
+  points (arrivées + départ de la sortie ouverte).
+- **Dashboard** : dernier km connu = dernière arrivée ; s'il y a une sortie
+  en cours, carte visible « Sortie en cours depuis… » avec le km de départ et
+  le bouton **Terminer** (accès principal à la clôture).
+
+### D39 — Hors-ligne : cycle complet des sorties (amendement de D13/D29)
+
+Ouvrir, clôturer, annuler, relayer fonctionnent hors-ligne : l'item de file
+porte l'intention sortie (création/`trips` update) **plus** ses relevés,
+rejoués dans l'ordre qui préserve les contraintes (lecture, puis ligne
+`trips`). Le **relais à la synchro** est l'application côté serveur du même
+trigger (D35) : un item « ouvrir en relais » synchronisé réussit sans badge
+conflit du seul fait qu'une sortie était ouverte ; il ne revient en conflit
+(éditable/abandonnable, D13) que sur échec déterministe D6/D34. Idempotence :
+jamais de double insertion ni de double clôture (D29 étendu, pas
+démenti).
+
+### D40 — Purge physique du patrimoine pré-sortie (amendement de D7)
+
+La migration M9 **supprime physiquement** (DELETE) toutes les lignes
+`kilometers` existantes et **les octets JPEG** du bucket `photos` qu'elles
+référencent (objets orphelins — sinon ils mangent le quota de D16 sans
+métadonnée pour les retrouver). Écart unique et daté à D7 (« rien n'est
+jamais purgé ») : quelques semaines de données familiales que le nouveau
+modèle rend dénuées de sens — pas de conversion, pas de cimetière legacy.
+D7 redevient intégral pour toute donnée née après la migration.
+
+### D41 — Découpage en milestones
+
+La bascule est découpée en trois sessions (extensibles si l'une dérive en taille) :
+**M9** base SQL (table, triggers, RLS, relais, purge), **M10** client
+(repositories, schemas zod, hooks, offline), **M11** UI (ouvrir/clôturer,
+historique par sortie, dashboard, admin). Détail du contrat d'interface dans
+`plan-execution.md`.

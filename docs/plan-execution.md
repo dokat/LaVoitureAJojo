@@ -1,20 +1,23 @@
 # Plan d'exécution — LaVoitureAJojo
 
-Huit milestones découlant de [`decisions.md`](decisions.md) ; un milestone
+Onze milestones découlant de [`decisions.md`](decisions.md) ; un milestone
 s'exécute dans une session dédiée (protocole dans `AGENTS.md` à la racine).
 Chaque section porte ses tâches, ses **prérequis** et ses **notes** (écarts,
 pièges, consignes pour la session suivante).
 
-| #   | Milestone           | Statut            |
-| --- | ------------------- | ----------------- |
-| 1   | Scaffold            | ✅ terminé        |
-| 2   | Schéma & RLS        | ✅ terminé        |
-| 3   | Authentification    | 🟡 test manuel dû |
-| 4   | Cœur métier         | ✅ terminé        |
-| 5   | UI v1               | ✅ terminé        |
-| 6   | Admin & soft-delete | ✅ terminé        |
-| 7   | Offline / PWA       | ✅ terminé        |
-| 8   | CI & déploiement    | ✅ terminé        |
+| #   | Milestone              | Statut            |
+| --- | ---------------------- | ----------------- |
+| 1   | Scaffold               | ✅ terminé        |
+| 2   | Schéma & RLS           | ✅ terminé        |
+| 3   | Authentification       | 🟡 test manuel dû |
+| 4   | Cœur métier            | ✅ terminé        |
+| 5   | UI v1                  | ✅ terminé        |
+| 6   | Admin & soft-delete    | ✅ terminé        |
+| 7   | Offline / PWA          | ✅ terminé        |
+| 8   | CI & déploiement       | ✅ terminé        |
+| 9   | Sorties — base SQL     | ⬜ à venir        |
+| 10  | Sorties — client       | ⬜ à venir        |
+| 11  | Sorties — UI           | ⬜ à venir        |
 
 ## Milestone 1 — Scaffold ✅
 
@@ -446,6 +449,129 @@ Notes :
 - Session suivante (milestone 3) : déclarer l'URL Pages dans les Allowed
   Redirect URLs de Supabase Auth ; faire la vérification reportée de la
   tâche 4 ; changer le mot de passe temporaire de l'admin (notes M2).
+
+## Milestone 9 — Sorties : base SQL ⬜
+
+Contrat : D30-D40. Ce que la session doit produire, tout côté base :
+
+- [ ] Migration `trips` : `id`, `vehicle_id → vehicles`, `start_reading_id →
+      kilometers` (NOT NULL), `end_reading_id → kilometers` (NULL = en cours),
+      `cancelled_at` (NULL), `created_at` ; UNIQUE sur `start_reading_id` ET
+      sur `end_reading_id` (D30 — rend le partage du relais légal et le
+      double-usage impossible)
+- [ ] Index partiel UNIQUE `trips(vehicle_id)` WHERE `end_reading_id IS NULL
+      AND cancelled_at IS NULL` (D35, une sortie ouverte par véhicule)
+- [ ] Trigger de clôture (D34) : à l'UPDATE posant `end_reading_id`, exiger
+      `km(arrivée) ≥ km(départ)` ET `reading_at(arrivée) ≥
+      reading_at(départ)` ; erreurs typées (`TRIP_KM_ORDER`, `TRIP_DATE_ORDER`)
+      reconnues par `repositories/errors.ts` au M10
+- [ ] Trigger d'insertion `trips` : le contrôle D6 sur le relevé de départ est
+      déjà gardé à l'INSERT kilometers (rien à refaire) ; refuser une
+      deuxième ouverture sans relais (garde de l'index partiel, message typé)
+- [ ] **Relais** (D35) : soit dans le trigger d'insertion `trips` (si une
+      sortie ouverte existe pour le véhicule → tenter de la clôturer avec
+      `NEW.start_reading_id`, refus typé `TRIP_RELAY_CONFLICT` si D34
+      violée — jamais de cap implicite), soit fonction SQL explicite ;
+      idempotent (rejeu offline, D39)
+- [ ] Trigger d'annulation/levée (D36) : poser `cancelled_at` ⇔ soft-delete /
+      restauration du relevé de départ dans la même transaction ; levée
+      recontrôlée par D18 (le trigger D6 existant sur UPDATE
+      `deleted_at → NULL` doit suffire — le vérifier en test)
+- [ ] RLS `trips` : SELECT tout authentifié ; INSERT tout authentifié ;
+      UPDATE clôture/annulation par l'auteur du départ OU admin (`is_admin()`)
+      ; la suppression d'une sortie clôturée (D33) passe par les policies
+      `kilometers` existantes (aucune écriture directe sur `trips` —
+      contagion par les relevés)
+- [ ] Purge du patrimoine pré-sortie (D40) : collecte des `photo_path` des
+      lignes `kilometers`, suppression des objets storage correspondants
+      (service_role ou dashboard — le bucket n'a pas de policy DELETE, cf.
+      notes M5), puis DELETE physique des lignes. Ordre : octets d'abord,
+      lignes ensuite (sinon plus rien ne pointe les orphelins)
+- [ ] Script de test SQL (`supabase/tests/trips_test.sql`, patron
+      auto-rollback M2) : ouverture normale ; relais OK (même relevé partagé,
+      somme des distances) ; relais refusé (km et date) ; clôture refusée
+      (km, date) ; clôture par un non-auteur membre = 0 ligne, admin = OK ;
+      annulation → départ invisible de la chronologie ; levée d'annulation
+      avec D6 revenue = refus ; restauration par agrégat (D37) ; index une
+      sortie ouverte ; purge = tables vides vérifiée dans un rollback
+- [ ] `src/types/supabase.ts` régénéré (D24) — sinon M10 typecheck à l'aveugle
+
+Prérequis : milestones 2-7 (la base actuelle est en prod) ; sauvegarde
+exportée des `kilometers` avant la purge D40 (dump SQL via dashboard —
+l'écart à D7 est acté, pas une raison pour ne pas avoir de filet le jour J).
+
+Notes :
+
+- (à remplir par la session M9)
+
+## Milestone 10 — Sorties : client ⬜
+
+Contrat : D30-D39 côté TypeScript. Rien d'visible à l'écran (l'UI reste en
+M11), mais `npm run build`/`lint`/`test` au vert sur les nouvelles couches.
+
+- [ ] Schéma zod `src/schemas/trips.ts` (D26) : ligne PostgREST → forme
+      domaine `Trip` (camelCase, `startedAt`/`endedAt` dérivés des relevés,
+      `distanceKm` dérivée — ou laissée au hook, trancher en session)
+- [ ] `tripsRepository` : `fetchTrips(vehicleId)`, `openTrip` (insère le ou les
+      relevés puis la ligne — dans l'ordre qui respecte UNIQUE et D34),
+      `closeTrip`, `cancelTrip`, `restoreTrip` (D37 : les trois écritures),
+      `deleteTrip` (soft-delete des deux relevés). Seule couche qui parle
+      supabase-js (D10) ; erreurs trigger → `TripError` typées, messages FR
+- [ ] `kilometersRepository` : étendre le mapping si les jointures `trips`
+      remontent les relevés par sortie ; les lectures existantes (liste,
+      `includeDeleted`) ne bougent pas — l'historique par sortie se construit
+      côté hook en joignant par id, pas en complexifiant le repo
+- [ ] Hook `useTrips(vehicleId)` : sortie en cours (`openTrip` dérivé),
+      liste enrichie des relevés, `startTrip` (dont rétroactif D31),
+      `completeTrip`, `cancelTrip`, `deleteTrip`, `restoreTrip` ; branché sur
+      `useOdometerValidation` pour les validations AVANT envoi (D6 reste
+      l'UX, la base la vérité) + règle interne D34 re-jouée côté client
+- [ ] Offline (D39) : l'item de file gagne un champ d'intention
+      (`tripOpen` / `tripClose` + relevés) ; le synchroniseur rejoue
+      lecture(s) puis écriture `trips`, idempotent sur `insertedReadingId` ;
+      le relais est une simple insertion qui réussit — pas de branche
+      « conflit » dédiée, conflit uniquement sur erreur déterministe ;
+      écran/indicateur de file existants mentionnent l'intention sortie
+- [ ] Tests vitest (D23) : relais avec même relevé, ouverture rétroactive,
+      annulation = 2 écritures cohérentes, restauration agrégat, file offline
+      `tripOpen`/`tripClose` en reprise de coupure ; les fixtures mockent
+      `tripsRepository` à sa frontière
+
+Prérequis : milestone 9 appliqué sur le projet Supabase.
+
+Notes :
+
+- (à remplir par la session M10)
+
+## Milestone 11 — Sorties : UI ⬜
+
+Contrat : D30-D39, D38 pour l'affichage.
+
+- [ ] `/saisie` devient le flux sortie : carte « Sortie en cours » (départ,
+      depuis quand, qui) avec formulaire **Terminer** ; sinon formulaire
+      **Démarrer une sortie** (km + date + photo/essence/notes départ) avec
+      repli « sortie rétroactive » (deux blocs départ/arrivée, D31) ;
+      le formulaire de relevé brut existant est supprimé
+- [ ] Relais (D35) : détection d'une sortie ouverte par autrui ⇒ confirmation
+      explicite (« votre relevé clôturera la sortie en cours de X ») avec
+      alert-dialog ; message d'échec typé `TRIP_RELAY_CONFLICT` / D34
+      (jamais de blocage silencieux)
+- [ ] Historique par sortie (D38) : ligne = départ → arrivée + distance +
+      auteur(s) ; toggle admin « voir les suppressions » inclut annulées
+      (D36) ; actions restaurer/supprimer par agrégat (D33/D37) ; graphique
+      inchangé
+- [ ] Dashboard (D38) : dernier km connu, carte sortie en cours avec bouton
+      **Terminer** ; badge file offline adapté aux intentions sortie
+- [ ] Vérification en réel mobile-first (D11) : ouvrir → clôturer ; relais
+      entre deux comptes ; annulation ; rétro-saisie ; une session hors-ligne
+      complète ouverture + clôture avec synchro au retour (patron M7)
+- [ ] `npm run build` + `lint` + `test` au vert ; notes de session écrites
+
+Prérequis : milestone 10.
+
+Notes :
+
+- (à remplir par la session M11)
 
 ## Dette / points de vigilance
 
