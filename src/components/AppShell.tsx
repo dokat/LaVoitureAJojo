@@ -1,14 +1,24 @@
 // Layout mobile-first (D11) : en-tête compact sur deux lignes — nom de
-// l'app en haut, véhicule actif à gauche et état du compte à droite en
-// dessous — + zone de défilement + barre de navigation basse (pouce). Les
-// écrans métier s'affichent dans <Outlet />.
+// l'app en haut, sélecteur du véhicule courant à gauche et état du compte à
+// droite en dessous — + zone de défilement + barre de navigation basse
+// (pouce). Les écrans métier s'affichent dans <Outlet />.
 // Milestone 7 (D13) : l'en-tête porte l'état réseau — pastille « hors-ligne »
 // et badge de la file d'attente, lien vers l'écran « items en attente ».
 // L'en-tête affiche le nom de l'utilisateur connecté (nom OAuth, sinon
 // email — D27), lien vers /compte.
+// D44 : le véhicule affiché est le choix de ce navigateur (localStorage) ;
+// le sélecteur de l'en-tête le change ici, pour cet appareil seulement.
 import { Link, NavLink, Outlet } from 'react-router'
 import { cn } from 'cn'
 import { Car, CloudOff, Gauge, History, Plus } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useAuth } from '@/hooks/useAuth'
 import { useActiveVehicle } from '@/hooks/useActiveVehicle'
 import { usePendingQueue } from '@/hooks/usePendingQueue'
@@ -19,7 +29,7 @@ const navItemClass =
 
 export function AppShell() {
   const { user } = useAuth()
-  const { vehicle } = useActiveVehicle()
+  const { vehicle, fleet, selectVehicle } = useActiveVehicle()
   const { items, count, conflicts, online } = usePendingQueue()
   // Nom lisible du compte : celui du fournisseur d'identité si connu, sinon
   // l'email complet ; le lien mène toujours à /compte.
@@ -37,15 +47,27 @@ export function AppShell() {
           </span>
           <div className="flex items-center gap-2">
             {vehicle ? (
-              <span
-                className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground"
-                title={`${vehicle.brand} ${vehicle.model}`}
-              >
-                <Car className="size-3.5 shrink-0" />
-                <span className="truncate">
-                  {vehicle.brand} {vehicle.model}
-                </span>
-              </span>
+              // D44 : le nom du véhicule est le sélecteur DE CE NAVIGATEUR —
+              // le choix part le changer ici, jamais dans la base.
+              <Select value={vehicle.id} onValueChange={selectVehicle}>
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Choisir le véhicule de ce navigateur"
+                  title={`${vehicle.brand} ${vehicle.model}`}
+                  className="h-auto min-w-0 flex-1 justify-start gap-1 border-0 bg-transparent px-1 text-xs font-normal text-muted-foreground shadow-none"
+                >
+                  <Car className="size-3.5 shrink-0" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectLabel>Véhicules (choix de ce navigateur)</SelectLabel>
+                  {fleet.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.brand} {option.model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : (
               <span className="flex-1" />
             )}

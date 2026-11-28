@@ -24,12 +24,11 @@ values ('00000000-0000-0000-0000-00000000d701', 'authenticated', 'authenticated'
         'rls-membre@example.com', crypt('x', gen_salt('bf')),
         now(), now(), now());
 
--- véhicule de test ACTIF + véhicule de test inactif ; le réel est désactivé
--- le temps du test (rollback à la fin).
-update public.vehicles set is_active = false where plate = 'AA876RE';
-insert into public.vehicles (id, brand, model, plate, is_active) values
-  ('00000000-0000-0000-0000-00000000d702', 'Test', 'RLS-Veh actif', 'RLS-A', true),
-  ('00000000-0000-0000-0000-00000000d709', 'Test', 'RLS-Veh dev',   'RLS-D', false);
+-- Deux véhicules de test dans la flotte (D44 : plus de notion d'actif — tous
+-- les véhicules de la flotte sont insérables par un membre).
+insert into public.vehicles (id, brand, model, plate) values
+  ('00000000-0000-0000-0000-00000000d702', 'Test', 'RLS-Veh 1', 'RLS-A'),
+  ('00000000-0000-0000-0000-00000000d709', 'Test', 'RLS-Veh 2', 'RLS-D');
 
 -- un relevé appartenant au compte admin réel du projet
 insert into public.kilometers (id, vehicle_id, user_id, km, reading_at)
@@ -65,19 +64,27 @@ set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000d701"}';
 insert into rls_results select 'R1 membre voit 4 vehicules', '4',
   count(*)::int::text from public.vehicles;
 insert into rls_results select 'R2 membre voit le releve', '1',
-  count(*)::int::text from public.kilometers;
+  count(*)::int::text from public.kilometers
+  where vehicle_id = '00000000-0000-0000-0000-00000000d702';
 insert into rls_results select 'R3 is_admin faux (membre)', 'false',
   public.is_admin()::text;
 
 -- INSERT autorisés / refusés (WITH CHECK → exception 42501)
-select pg_temp.juge('R4 insert vehicule actif', 'ok',
+select pg_temp.juge('R4 insert vehicule de la flotte', 'ok',
   'insert into public.kilometers (vehicle_id, user_id, km, reading_at) values
    (''00000000-0000-0000-0000-00000000d702'', ''00000000-0000-0000-0000-00000000d701'',
     50100, ''2026-11-20T12:00:00Z'')');
-select pg_temp.juge('R5 insert vehicule inactif leve', 'leve',
+-- D44 : plus de véhicule « actif » — le second véhicule de la flotte est
+-- insérable lui aussi (chaque navigateur choisit le sien).
+select pg_temp.juge('R5 insert second vehicule flotte', 'ok',
   'insert into public.kilometers (vehicle_id, user_id, km, reading_at) values
    (''00000000-0000-0000-0000-00000000d709'', ''00000000-0000-0000-0000-00000000d701'',
-    50200, ''2026-11-21T12:00:00Z'')');
+    42000, ''2026-11-21T12:00:00Z'')');
+-- Dehors de la flotte : la policy WITH CHECK « véhicule existant » refuse.
+select pg_temp.juge('R5b insert vehicule inexistant leve', 'leve',
+  'insert into public.kilometers (vehicle_id, user_id, km, reading_at) values
+   (''00000000-0000-0000-0000-00000000d7ff'', ''00000000-0000-0000-0000-00000000d701'',
+    50300, ''2026-11-23T12:00:00Z'')');
 select pg_temp.juge('R6 insert au nom d autrui leve', 'leve',
   'insert into public.kilometers (vehicle_id, user_id, km, reading_at) values
    (''00000000-0000-0000-0000-00000000d702'',
@@ -146,9 +153,10 @@ insert into rls_results select 'R14b restauree', 'true',
   (deleted_at is null)::text
 from public.kilometers where id = '00000000-0000-0000-0000-00000000d703';
 
--- bascule véhicule (admin) : autorisé
-select pg_temp.juge('R15 admin bascule vehicule', 'ok',
-  'update public.vehicles set is_active = false
+-- édition des infos véhicule (admin) : autorisée (D8 — seule écriture
+-- possible dans vehicles ; la bascule d'activation n'existe plus, D44)
+select pg_temp.juge('R15 admin edite infos vehicule', 'ok',
+  'update public.vehicles set model = ''RLS-rename''
    where id = ''00000000-0000-0000-0000-00000000d702''');
 
 -- ── Verdict ────────────────────────────────────────────────────────────────

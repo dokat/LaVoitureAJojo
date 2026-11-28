@@ -1,7 +1,7 @@
--- Test documenté du périmètre admin du milestone 6, côté base : bascule et
--- édition des véhicules (D8/D3), restauration (D7 + recontrôle D6 à la
--- restauration, D18), soft-delete d'autrui par l'admin, synchronisation de
--- profiles.email (D27).
+-- Test documenté du périmètre admin du milestone 6, côté base : édition des
+-- véhicules (D8 ; la bascule d'activation est morte avec D44), restauration
+-- (D7 + recontrôle D6 à la restauration, D18), soft-delete d'autrui par
+-- l'admin, synchronisation de profiles.email (D27).
 --
 -- Complète rls_smoke_test.sql (milestone 2) sans le répéter : les cas
 -- « membre vs admin » génériques y sont déjà (R8b, R9b, R11b, R13, R14).
@@ -22,11 +22,11 @@ values ('00000000-0000-0000-0000-00000000d801', 'authenticated', 'authenticated'
         'm6-membre@example.com', crypt('x', gen_salt('bf')),
         now(), now(), now());
 
--- Véhicules jetables : le réel est désactivé le temps du test (rollback).
-update public.vehicles set is_active = false where plate = 'AA876RE';
-insert into public.vehicles (id, brand, model, plate, is_active) values
-  ('00000000-0000-0000-0000-00000000d802', 'Test', 'M6-actif', 'M6-A', true),
-  ('00000000-0000-0000-0000-00000000d803', 'Test', 'M6-reserve', 'M6-R', false);
+-- Véhicules jetables de la flotte (D44 : plus d'état « actif » en base — tous
+-- les véhicules de la flotte sont insérables par un membre).
+insert into public.vehicles (id, brand, model, plate) values
+  ('00000000-0000-0000-0000-00000000d802', 'Test', 'M6-flotte', 'M6-A'),
+  ('00000000-0000-0000-0000-00000000d803', 'Test', 'M6-second', 'M6-B');
 
 -- Chronologie du véhicule M6-A — posée dans l'ordre, chaque écriture passant
 -- elle-même le contrôle D6 à l'insertion (preuve indirecte que le trigger
@@ -103,10 +103,15 @@ select pg_temp.juge('V1 edit vehicule membre (silencieux)', 'ok',
 insert into m6_results select 'V1b brand intact', 'Test', brand
   from public.vehicles where id = '00000000-0000-0000-0000-00000000d802';
 
-select pg_temp.juge('V2 bascule par membre (silencieuse)', 'ok',
-  'update public.vehicles set is_active = true where id = ''00000000-0000-0000-0000-00000000d803''');
-insert into m6_results select 'V2b un seul actif', '1', count(*)::text
-  from public.vehicles where is_active;
+-- D44 : écrire sur n'importe quel véhicule de la flotte est le droit commun
+-- du membre — le choix du navigateur courant ne passe plus par l'admin.
+select pg_temp.juge('V2 membre ecrit sur le second vehicule', 'ok',
+  'insert into public.kilometers (vehicle_id, user_id, km, reading_at) values
+   (''00000000-0000-0000-0000-00000000d803'', ''00000000-0000-0000-0000-00000000d801'',
+    100, ''2026-12-01T12:00:00Z'')');
+insert into m6_results select 'V2b releve pose sur d803', '1', count(*)::text
+  from public.kilometers
+  where vehicle_id = '00000000-0000-0000-0000-00000000d803';
 
 -- Restauration par le membre de SA ligne morte : aucune policy USING ne la
 -- voit côté membre → 0 ligne ; l'état doit rester supprimé (D7 : admin seul).
@@ -136,27 +141,13 @@ select pg_temp.juge('V3 admin édite les infos', 'ok',
 insert into m6_results select 'V3b modèle à jour', 'M6-rename', model
   from public.vehicles where id = '00000000-0000-0000-0000-00000000d803';
 
--- Bascule dans le sens sûr (désactiver l'actif puis activer l'autre — ordre
--- du repositories/setActiveVehicle client) : les deux écritures passent.
-select pg_temp.juge('V4 admin bascule (désactive)', 'ok',
-  'update public.vehicles set is_active = false where id = ''00000000-0000-0000-0000-00000000d802''');
-select pg_temp.juge('V5 admin bascule (active)', 'ok',
-  'update public.vehicles set is_active = true where id = ''00000000-0000-0000-0000-00000000d803''');
-insert into m6_results select 'V5b actif = réserve', 'd803', right(id::text, 4)
-  from public.vehicles where is_active
-    and id in ('00000000-0000-0000-0000-00000000d802',
-               '00000000-0000-0000-0000-00000000d803');
-
--- L'ordre inverse (activer sans désactiver d'abord) est une violation
--- d'unicité, pas une question de droit — vérifié pour justifier le
--- séquentiel « off puis on » du repository.
-do $$ begin
-  update public.vehicles set is_active = true
-    where id = '00000000-0000-0000-0000-00000000d802';
-  insert into m6_results values ('V6 deux actifs refusés', 'leve', 'ok-non-leve');
-exception when unique_violation then
-  insert into m6_results values ('V6 deux actifs refusés', 'leve', 'leve');
-end $$;
+-- Filet de la policy D44 : hors de la flotte, l'insertion est refusée même à
+-- l'admin (WITH CHECK « véhicule existant » — la bascule d'activation et son
+-- index d'unicité « deux actifs » n'existent plus).
+select pg_temp.juge('V4 insert vehicule hors flotte leve', 'leve',
+  'insert into public.kilometers (vehicle_id, user_id, km, reading_at) values
+   (''00000000-0000-0000-0000-00000000d8ff'',
+    ''c4b444ad-a7d9-4aa7-97d5-31aafb2772c4'', 100, ''2026-12-01T12:00:00Z'')');
 
 -- Soft-delete de la ligne d'autrui (membre) : autorisé admin (D8).
 select pg_temp.juge('S2 admin soft-supprime autrui', 'ok',

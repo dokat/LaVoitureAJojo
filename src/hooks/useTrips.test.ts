@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 
 const mocks = vi.hoisted(() => ({
-  getActiveVehicle: vi.fn(),
+  listVehicles: vi.fn(),
   listReadings: vi.fn(),
   insertReading: vi.fn(),
   attachPhoto: vi.fn(),
@@ -32,8 +32,8 @@ vi.mock('@/lib/pendingStore', () => ({
   update: mocks.pendingUpdate,
 }))
 vi.mock('@/repositories/vehiclesRepository', () => ({
-  getActiveVehicle: mocks.getActiveVehicle,
-  listVehicles: vi.fn(),
+  listVehicles: mocks.listVehicles,
+  updateVehicleInfo: vi.fn(),
 }))
 vi.mock('@/repositories/kilometersRepository', () => ({
   listReadings: mocks.listReadings,
@@ -142,7 +142,7 @@ async function mounted() {
 beforeEach(() => {
   vi.clearAllMocks()
   setOnline(true)
-  mocks.getActiveVehicle.mockResolvedValue({ id: VEHICLE_ID })
+  mocks.listVehicles.mockResolvedValue([{ id: VEHICLE_ID }])
   // Chronologie de base : sortie t1 ouverte hier (départ r-start), et un
   // relevé plus récent aujourd'hui (r-latest) — appui des validations D6.
   mocks.fetchTrips.mockResolvedValue([trip()])

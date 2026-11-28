@@ -1,10 +1,9 @@
-// Écran d'administration des véhicules (D8, milestone 6), réservé admin
-// (route gardée par RequireAdmin) : bascule du véhicule actif — seul l'admin
-// peut écrire dans vehicles, la RLS le garde — et édition des infos (marque,
-// modèle, plaque). La flotte naît du seed et ne meurt pas en v1 : pas
-// d'ajout/suppression ici.
+// Écran d'administration des véhicules (D8, milestone 6), réservé admin (route
+// gardée par RequireAdmin) : édition des infos (marque, modèle, plaque). La
+// bascule du véhicule actif a disparu d'ici (D44) : le véhicule courant est le
+// choix de chaque navigateur, porté par l'en-tête de l'app. La flotte naît du
+// seed et ne meurt pas en v1 : pas d'ajout/suppression ici.
 import { useState } from 'react'
-import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -13,7 +12,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -132,25 +130,15 @@ function EditVehicleDialog({
 }
 
 export function VehiclesAdminPage() {
-  const { status, error, vehicles, activateVehicle, saveVehicleInfo, reload } =
-    useVehicles()
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [pendingId, setPendingId] = useState<string | null>(null)
-
-  const activate = async (vehicle: Vehicle) => {
-    setPendingId(vehicle.id)
-    const failure = await activateVehicle(vehicle.id)
-    setPendingId(null)
-    setActionError(failure ? failure.message : null)
-  }
-
+  const { status, error, vehicles, saveVehicleInfo, reload } = useVehicles()
   return (
     <div className="grid gap-4">
       <CardHeader className="p-0">
         <CardTitle>Administration — Véhicules</CardTitle>
         <CardDescription>
-          Le véhicule actif reçoit toutes les saisies ; la bascule est réservée
-          à l’admin (D3/D8).
+          Informations de la flotte, visibles de tous les membres. Le véhicule
+          sur lequel on saisit est le choix de chaque navigateur (en-tête de
+          l’app), plus un réglage admin (D44).
         </CardDescription>
       </CardHeader>
 
@@ -182,32 +170,10 @@ export function VehiclesAdminPage() {
                     {vehicle.plate}
                   </span>
                 </div>
-                {vehicle.isActive ? (
-                  <Badge variant="secondary">
-                    <Check className="size-3" />
-                    Actif
-                  </Badge>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={pendingId !== null}
-                    onClick={() => void activate(vehicle)}
-                  >
-                    {pendingId === vehicle.id
-                      ? 'Bascule…'
-                      : 'Utiliser ce véhicule'}
-                  </Button>
-                )}
                 <EditVehicleDialog vehicle={vehicle} onSave={saveVehicleInfo} />
               </CardContent>
             </Card>
           ))}
-          {actionError && (
-            <p role="alert" className="text-sm text-destructive">
-              {actionError}
-            </p>
-          )}
         </div>
       )}
     </div>

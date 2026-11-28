@@ -25,8 +25,9 @@ export type PendingIntent = 'reading' | 'tripOpen' | 'tripClose' | 'tripCancel'
  * l'horodatage de la manipulation utilisateur, figé à la saisie, pas à l'envoi. */
 export type PendingReading = {
   id: string
-  /** Résolu à la saisie si connu ; le synchroniseur retombe sur le véhicule
-   * actif à l'envoi sinon (le trigger D6 reste la vérité au renvoi). */
+  /** Résolu à la saisie si connu ; le synchroniseur retombe sur le choix du
+   * navigateur qui envoie sinon (D44 — le trigger D6 reste la vérité au
+   * renvoi). */
   vehicleId: string | null
   userId: string | null
   km: number

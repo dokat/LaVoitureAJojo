@@ -181,7 +181,6 @@ export type Database = {
           brand: string
           created_at: string
           id: string
-          is_active: boolean
           model: string
           plate: string
         }
@@ -189,7 +188,6 @@ export type Database = {
           brand: string
           created_at?: string
           id?: string
-          is_active?: boolean
           model: string
           plate: string
         }
@@ -197,7 +195,6 @@ export type Database = {
           brand?: string
           created_at?: string
           id?: string
-          is_active?: boolean
           model?: string
           plate?: string
         }

@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 
 const mocks = vi.hoisted(() => ({
-  getActiveVehicle: vi.fn(),
+  listVehicles: vi.fn(),
   insertReading: vi.fn(),
   uploadPhoto: vi.fn(),
   attachPhoto: vi.fn(),
@@ -21,8 +21,8 @@ vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'test@example.com' } }),
 }))
 vi.mock('@/repositories/vehiclesRepository', () => ({
-  getActiveVehicle: mocks.getActiveVehicle,
-  listVehicles: vi.fn(),
+  listVehicles: mocks.listVehicles,
+  updateVehicleInfo: vi.fn(),
 }))
 vi.mock('@/repositories/kilometersRepository', () => ({
   insertReading: mocks.insertReading,
@@ -85,8 +85,10 @@ function setOnline(value: boolean): void {
 beforeEach(async () => {
   vi.clearAllMocks()
   setOnline(true)
+  localStorage.clear()
   await store.clear()
-  mocks.getActiveVehicle.mockResolvedValue({ id: 'v1' })
+  // D44 : le choix non mémorisé retombe sur le premier véhicule de la flotte.
+  mocks.listVehicles.mockResolvedValue([{ id: 'v1' }])
   mocks.insertReading.mockResolvedValue({ id: 'r-new' })
   mocks.uploadPhoto.mockResolvedValue('u1/r-new.jpg')
   mocks.attachPhoto.mockResolvedValue(undefined)

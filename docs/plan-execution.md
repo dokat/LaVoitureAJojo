@@ -793,6 +793,50 @@ Notes :
   aligné depuis M9). Le PWA est à réinstaller en prod pour vérifier
   l'installabilité avec les nouveaux écrans.
 
+## Correctif hors-milestone — sélection du véhicule par navigateur (2026-11-28) ✅
+
+Bug produit : la bascule du véhicule actif s'appliquait partout (elle vivait
+dans `vehicles.is_active`). Contrat refondu par **D44** — lire ses puces avant
+toute reprise sur ce sujet.
+
+- [x] Migration `20261128170000_vehicle_selection_local.sql` : policy
+      `kilometers` INSERT → « véhicule existant de la flotte » ; drop index
+      `vehicles_one_active_at_a_time` + colonne `is_active` ; appliquée à
+      distance (CLI `db push`, l'historique local ↔ distant est aligné depuis M9).
+- [x] `lib/vehicleSelection.ts` : localStorage + pub/sub ; figé par
+      `vehicleSelection.test.ts` (persistance, retomber sur le premier, choix
+      périmé) et `useActiveVehicle.test.ts` (zéro écriture base, propagation
+      multi-instances).
+- [x] Client : repository/hook `useActiveVehicle`, `useReadings`, `tripSync`,
+      `usePendingQueue` résolvent via le choix navigateur ; schéma zod et
+      types générés sans `is_active`.
+- [x] UI : sélecteur de flotte dans l'en-tête (`AppShell`, pour tous) ;
+      `/admin/vehicules` réduit à l'édition des infos.
+- [x] Tests SQL (`rls_smoke_test`, `m6_admin_test`, `trips_test`,
+      `d6_regression_test`) retirés de `is_active`, nouveaux cas D44 ;
+      rejoués sur la base distante (rollback) — voir notes.
+
+Notes :
+
+- **Ordre de déploiement** : pousser la migration AVANT (ou avec) le client —
+  l'ancien client sélectionne `is_active` et casserait sur schéma neuf ;
+  l'inverse (client neuf, base vieille) fonctionne, la colonne simplement
+  ignorée.
+- Le choix se partage entre onglets d'un même navigateur (localStorage +
+  événement `storage`) mais PAS entre appareils : c'est la règle, pas une
+  limite.
+- Piège de résolution : le stockage n'est qu'un **indice** — tout passe par
+  `pickSelectedVehicle(flotte)` ; ne jamais faire confiance à l'id stocké seul
+  (véhicule hors flotte ⇒ retour silencieux au premier).
+- Artefact corrigé au passage : `rls_smoke_test` R2 comptait TOUTE la table
+  `kilometers` (attendu « 1 ») — faux depuis que la prod porte un historique.
+  Comptage scopé au véhicule de la fixture.
+- Le véhicule par défaut d'un navigateur neuf est le premier par `created_at`
+  (le Honda du seed) ; rien ne force le véhicule « actif » d'hier, disparu.
+- `useReadings` (dashboard) s'est abonné à la sélection comme
+  `useActiveVehicle` : un changement depuis l'en-tête recharge sa liste —
+  sinon le dashboard afficherait la chronologie de l'autre véhicule.
+
 ## Dette / points de vigilance
 
 - Régénérer `src/types/supabase.ts` (`supabase gen types typescript`) après

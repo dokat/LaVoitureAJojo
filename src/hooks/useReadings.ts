@@ -1,15 +1,20 @@
-// Hook du flux relevés : lecture de la chronologie du véhicule actif (avec
-// filtres admin M6 : suppressions incluses, par utilisateur), ajout (avec
-// photo compressée puis uploadée), soft-delete et restauration. Orchestration
-// seule — les règles vivent dans les repositories (base) et validateOdometer
-// (UX). Milestone 7 : une saisie sans réseau (ou dont l'insertion échoue sur
-// erreur réseau) file dans la file d'attente IndexedDB (D13, usePendingQueue
-// la renverra) ; le trigger D6 garde la vérité au renvoi.
+// Hook du flux relevés : lecture de la chronologie du véhicule courant (choix
+// du navigateur, D44 ; filtres admin M6 : suppressions incluses, par
+// utilisateur), ajout (photo compressée puis uploadée), soft-delete et
+// restauration. Orchestration seule — les règles vivent dans les repositories
+// (base) et validateOdometer (UX). Milestone 7 : une saisie sans réseau (ou
+// dont l'insertion échoue sur erreur réseau) file dans la file d'attente
+// IndexedDB (D13, usePendingQueue la renverra) ; le trigger D6 garde la vérité
+// au renvoi.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import type { OdometerPoint } from '@/hooks/useOdometerValidation'
 import { compressPhoto, ImageError } from '@/lib/images'
 import * as pendingStore from '@/lib/pendingStore'
+import {
+  pickSelectedVehicle,
+  subscribeVehicleSelection,
+} from '@/lib/vehicleSelection'
 import * as kilometersRepository from '@/repositories/kilometersRepository'
 import * as photosRepository from '@/repositories/photosRepository'
 import * as vehiclesRepository from '@/repositories/vehiclesRepository'
@@ -68,19 +73,21 @@ export function useReadings(options: UseReadingsOptions = {}) {
   // lecture, sans dépendre de l'identité de l'objet d'options.
   const fetchAndApply = useCallback(async (): Promise<DataError | null> => {
     try {
-      const active = await vehiclesRepository.getActiveVehicle()
-      if (!active) {
+      const selected = pickSelectedVehicle(
+        await vehiclesRepository.listVehicles(),
+      )
+      if (!selected) {
         throw new DataError(
           'not_found',
-          'Aucun véhicule actif — l\u2019administrateur doit en activer un.',
+          'Aucun véhicule dans la flotte — prévenez l\u2019administrateur.',
         )
       }
-      const list = await kilometersRepository.listReadings(active.id, {
+      const list = await kilometersRepository.listReadings(selected.id, {
         includeDeleted,
         userId: userId ?? undefined,
       })
       setReadings(list)
-      setVehicle(active)
+      setVehicle(selected)
       setError(null)
       setStatus('ready')
       return null
@@ -95,6 +102,9 @@ export function useReadings(options: UseReadingsOptions = {}) {
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- setState après await uniquement (fetch de montage, pas de lib de données)
     void fetchAndApply()
+    // Choix changé dans ce navigateur (D44) : le véhicule n'est plus le même,
+    // la chronologie non plus — relecture, pas de fusion des deux historiques.
+    return subscribeVehicleSelection(() => void fetchAndApply())
   }, [fetchAndApply])
 
   // Rechargement déclenché depuis un événement (bouton « réessayer ») :
@@ -116,7 +126,7 @@ export function useReadings(options: UseReadingsOptions = {}) {
         }
       }
       // En file, le véhicule est résolu à l'envoi s'il est inconnu ici (app
-      // montée hors-ligne) — le synchroniseur reprendra le véhicule actif.
+      // montée hors-ligne) — le synchroniseur reprendra le choix du navigateur.
       const enqueue = (photoBlob: Blob | null) =>
         pendingStore.add({
           vehicleId: vehicle?.id ?? null,
@@ -138,11 +148,13 @@ export function useReadings(options: UseReadingsOptions = {}) {
         }
         // Véhicule inconnu alors qu'on est en ligne (montage en échec réseau
         // antérieur) : relecture franche plutôt qu'une insertion impossible.
-        const active = vehicle ?? (await vehiclesRepository.getActiveVehicle())
+        const active =
+          vehicle ??
+          pickSelectedVehicle(await vehiclesRepository.listVehicles())
         if (!active) {
           throw new DataError(
             'not_found',
-            'Aucun véhicule actif — l\u2019administrateur doit en activer un.',
+            'Aucun véhicule dans la flotte — prévenez l\u2019administrateur.',
           )
         }
         const reading = await kilometersRepository.insertReading({

@@ -82,6 +82,8 @@ describe('vehicleRowSchema (vehicles → Vehicle)', () => {
       brand: 'Renault',
       model: 'Clio',
       plate: 'AB-123-CD',
+      // is_active a quitté la table (D44) : toléré en colonne en plus, comme
+      // tout surplus d'une migration avant régénération des types.
       is_active: true,
     })
     expect(vehicle).toEqual({
@@ -89,7 +91,6 @@ describe('vehicleRowSchema (vehicles → Vehicle)', () => {
       brand: 'Renault',
       model: 'Clio',
       plate: 'AB-123-CD',
-      isActive: true,
     })
   })
 })

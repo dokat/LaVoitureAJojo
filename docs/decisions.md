@@ -482,3 +482,42 @@ courbe (les lignes mortes sont filtrées à l'entrée de la carte). Le
 dashboard garde le dernier km connu et les cartes de sorties (D38/D42) ;
 l'historique se nourrit de `trips.readings`, déjà chargé par `useTrips`,
 sans requête supplémentaire. Composite : `features/history/OdometerChartCard`.
+
+## 15. Sélection du véhicule par navigateur (2026-11-28, session corrective)
+
+### D44 — Le véhicule courant n'est plus en base : choix par navigateur
+
+Bug produit remonté : changer le véhicule depuis un navigateur le changeait
+partout — le « véhicule actif » global (D3/D8) est inutilisable avec la flotte
+réel + dev. Décision : **le véhicule courant est un choix mémorisé dans le
+localStorage du navigateur**, sans aucune écriture Supabase.
+
+- **D8 amendée** : l'admin n'a plus la bascule (supprimée de
+  `/admin/vehicules`, qui garde l'édition des infos). Chacun choisit le
+  véhicule de SON navigateur dans l'en-tête de l'app (`AppShell`, liste de la
+  flotte, coche sur le courant).
+- **D3 amendée, dans le bon sens** : le dev pointe son navigateur sur le
+  véhicule de test sans toucher à la sélection de la famille.
+- **Modèle §6 amendé** : `vehicles (id, brand, model, plate)` — la colonne
+  `is_active` et l'index partiel `vehicles_one_active_at_a_time` disparaissent
+  (migration `20261128170000_vehicle_selection_local.sql`).
+- **RLS amendée** : la policy « ajout de releves sur le vehicule actif »
+  devient « ajout de releves sur un vehicule **existant de la flotte** » —
+  sinon la base refuserait d'écrire sur tout véhicule non désigné « actif »,
+  ce qui contredirait le modèle entier. Le filet « hors flotte ⇒ refus » est
+  prouvé par `rls_smoke_test.sql` (R5/R5b) et `m6_admin_test.sql` (V2/V4).
+- Client : `lib/vehicleSelection.ts` parle à localStorage (patron
+  pendingStore : la règle D10 « repositories = seule couche supabase-js » est
+  intacte). Résolution au montage : choix mémorisé **encore présent dans la
+  flotte**, sinon premier véhicule par date de création — le réel du seed.
+  Un choix périmé (véhicule retiré, stockage vidé) retombe donc sans erreur.
+  `useActiveVehicle` garde son contrat (résout `vehicle` pour les écrans) et
+  expose `fleet` + `selectVehicle` ; la notification pub/sub bascule toutes
+  les instances montées — et les autres onglets via l'événement `storage`.
+- **D39 précisé au point véhicule** : les items de la file figurent toujours
+  leur `vehicleId` à la saisie ; un item sans véhicule se synchronise sur le
+  choix du navigateur qui envoie, plus sur un « véhicule actif » disparu. Les
+  chronologies de deux véhicules sont indépendantes — le trigger D6 est déjà
+  par `vehicle_id` (rien à changer de ce côté).
+- D26/D24 : le schéma zod `Vehicle` et les types générés perdent `is_active`
+  (régénération après la migration).

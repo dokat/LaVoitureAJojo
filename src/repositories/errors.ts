@@ -9,7 +9,7 @@ export type DataErrorCode =
   | 'km_regression' // trigger D6 à l'insertion ou à la restauration
   | 'km_immutable' // trigger D7 : édition d'un relevé refusée
   | 'permission' // RLS : policy USING silencieuse ou WITH CHECK 42501
-  | 'not_found' // ligne absente ou aucun véhicule actif
+  | 'not_found' // ligne absente, flotte vide
   | 'network' // supabase-js n'a pas atteint le serveur
   | 'photo_upload' // relevé inséré, octets photo non partis (D16)
   // Marqueurs des triggers `trips` (M9 → M10, D33→D36) :
@@ -142,7 +142,7 @@ export function toDataError(error: unknown): DataError {
     if (raw.includes('trips_one_open_per_vehicle'))
       return trip('trip_concurrent_open', error)
   }
-  // Violation RLS (WITH CHECK) ou tentative sur véhicule non actif.
+  // Violation RLS (WITH CHECK) — p. ex. relevé sur un véhicule hors flotte (D44).
   if (err?.code === '42501' || raw.includes('row-level security')) {
     return new DataError('permission', message('permission'), error)
   }

@@ -17,9 +17,9 @@ values ('00000000-0000-0000-0000-00000000d601', 'authenticated', 'authenticated'
         'd6-test@example.com', crypt('mot-de-passe-inutile', gen_salt('bf')),
         now(), now(), now());
 
-insert into public.vehicles (id, brand, model, plate, is_active) values
-  ('00000000-0000-0000-0000-00000000d602', 'Test', 'V1', 'D6-V1', false),
-  ('00000000-0000-0000-0000-00000000d603', 'Test', 'V2', 'D6-V2', false);
+insert into public.vehicles (id, brand, model, plate) values
+  ('00000000-0000-0000-0000-00000000d602', 'Test', 'V1', 'D6-V1'),
+  ('00000000-0000-0000-0000-00000000d603', 'Test', 'V2', 'D6-V2');
 
 create temp table d6_results (
   scenario text, attendu text, obtenu text, detail text

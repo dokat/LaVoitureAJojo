@@ -28,12 +28,12 @@ values ('00000000-0000-0000-0000-00000000d901', 'authenticated', 'authenticated'
        ('00000000-0000-0000-0000-00000000d902', 'authenticated', 'authenticated',
         'm9-b@example.com', crypt('x', gen_salt('bf')), now(), now(), now());
 
--- Deux véhicules jetables (inactifs : les véhicules réels ne bougent pas).
+-- Deux véhicules jetables de la flotte.
 -- VA porte la chronologie principale ; VB une chronologie dédiée au scénario
 -- annulation/levée (le conflit D18 exige une vivante à date >= du départ).
-insert into public.vehicles (id, brand, model, plate, is_active) values
-  ('00000000-0000-0000-0000-00000000d910', 'Test', 'M9-sorties',  'M9-A', false),
-  ('00000000-0000-0000-0000-00000000d911', 'Test', 'M9-annulation', 'M9-B', false);
+insert into public.vehicles (id, brand, model, plate) values
+  ('00000000-0000-0000-0000-00000000d910', 'Test', 'M9-sorties',  'M9-A'),
+  ('00000000-0000-0000-0000-00000000d911', 'Test', 'M9-annulation', 'M9-B');
 
 -- Chronologie de VA — chaque insertage passe D6 à cet instant (preuve
 -- indirecte du trigger existant). A = d901, B = d902.

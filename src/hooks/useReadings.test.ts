@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 
 const mocks = vi.hoisted(() => ({
-  getActiveVehicle: vi.fn(),
+  listVehicles: vi.fn(),
   listReadings: vi.fn(),
   insertReading: vi.fn(),
   attachPhoto: vi.fn(),
@@ -25,8 +25,8 @@ vi.mock('@/lib/pendingStore', () => ({
   add: mocks.pendingAdd,
 }))
 vi.mock('@/repositories/vehiclesRepository', () => ({
-  getActiveVehicle: mocks.getActiveVehicle,
-  listVehicles: vi.fn(),
+  listVehicles: mocks.listVehicles,
+  updateVehicleInfo: vi.fn(),
 }))
 vi.mock('@/repositories/kilometersRepository', () => ({
   listReadings: mocks.listReadings,
@@ -56,7 +56,6 @@ const vehicle: Vehicle = {
   brand: 'Clio',
   model: 'III',
   plate: 'XX-123-YY',
-  isActive: true,
 }
 
 const reading = (overrides: Partial<Reading> = {}): Reading => ({
@@ -77,7 +76,8 @@ const reading = (overrides: Partial<Reading> = {}): Reading => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.getActiveVehicle.mockResolvedValue(vehicle)
+  localStorage.clear() // D44 : pas de choix mémorisé → premier véhicule de liste
+  mocks.listVehicles.mockResolvedValue([vehicle])
   mocks.listReadings.mockResolvedValue([reading()])
   mocks.pendingAdd.mockResolvedValue({ id: 'p1' })
   setOnline(true)
@@ -101,7 +101,7 @@ async function mounted() {
 }
 
 describe('useReadings — lecture', () => {
-  it('charge le véhicule actif puis la chronologie, dernier relevé en tête', async () => {
+  it('charge le véhicule courant puis la chronologie, dernier relevé en tête', async () => {
     const { result } = await mounted()
     expect(result.current.vehicle).toEqual(vehicle)
     expect(result.current.readings).toHaveLength(1)
@@ -115,8 +115,8 @@ describe('useReadings — lecture', () => {
     })
   })
 
-  it('passe en erreur quand aucun véhicule n\u2019est actif (D3)', async () => {
-    mocks.getActiveVehicle.mockResolvedValue(null)
+  it('passe en erreur quand la flotte est vide', async () => {
+    mocks.listVehicles.mockResolvedValue([])
     const { result } = renderHook(() => useReadings())
     await waitFor(() => expect(result.current.status).toBe('error'))
     expect(result.current.error?.code).toBe('not_found')

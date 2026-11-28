@@ -19,6 +19,7 @@ import {
 import { useAuth } from '@/hooks/useAuth'
 import * as pendingStore from '@/lib/pendingStore'
 import type { PendingReading } from '@/lib/pendingStore'
+import { pickSelectedVehicle } from '@/lib/vehicleSelection'
 import { DataError } from '@/repositories/errors'
 import * as kilometersRepository from '@/repositories/kilometersRepository'
 import * as photosRepository from '@/repositories/photosRepository'
@@ -160,12 +161,12 @@ async function syncReadingItem(
   if (!readingId) {
     const vehicleId =
       item.vehicleId ??
-      (await vehiclesRepository.getActiveVehicle())?.id ??
+      pickSelectedVehicle(await vehiclesRepository.listVehicles())?.id ??
       null
     if (!vehicleId) {
       throw new DataError(
         'not_found',
-        'Aucun véhicule actif — l\u2019administrateur doit en activer un.',
+        'Aucun véhicule dans la flotte — prévenez l\u2019administrateur.',
       )
     }
     const reading = await kilometersRepository.insertReading({

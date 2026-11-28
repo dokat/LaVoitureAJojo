@@ -1,7 +1,8 @@
-// Hook du tableau de bord admin (D8, milestone 6) : flotte, bascule du
-// véhicule actif et édition des infos. La bascule est une fenêtre de vérité
-// locale : après chaque action, la liste est rechargée depuis la base (un
-// seul actif est un invariant gardé là-bas, index partiel D3).
+// Hook du tableau de bord admin (D8, milestone 6) : flotte et édition des
+// infos. Depuis D44, la bascule du véhicule « actif » a disparu : le véhicule
+// courant est le choix de chaque navigateur (useActiveVehicle.selectVehicle),
+// rien d'admin à ce niveau. Après action, la liste est rechargée depuis la
+// base — la flotte y reste la seule vérité.
 import { useCallback, useEffect, useState } from 'react'
 import * as vehiclesRepository from '@/repositories/vehiclesRepository'
 import { DataError, toDataError } from '@/repositories/errors'
@@ -34,22 +35,7 @@ export function useVehicles() {
     void fetchAndApply()
   }, [fetchAndApply])
 
-  /** Bascule admin du véhicule actif (seule à pouvoir écrire dans vehicles). */
-  const activateVehicle = useCallback(
-    async (vehicleId: string): Promise<DataError | null> => {
-      try {
-        setVehicles(await vehiclesRepository.setActiveVehicle(vehicleId))
-        return null
-      } catch (caught) {
-        // État inconnu (la bascule est séquentielle) : on relit la base.
-        await fetchAndApply()
-        return toDataError(caught)
-      }
-    },
-    [fetchAndApply],
-  )
-
-  /** Édition marque / modèle / plaque (D8). */
+  /** Édition marque / modèle / plaque (D8) : seule écriture admin dans vehicles. */
   const saveVehicleInfo = useCallback(
     async (vehicleId: string, info: VehicleInfo): Promise<DataError | null> => {
       try {
@@ -72,7 +58,6 @@ export function useVehicles() {
     status,
     error,
     vehicles,
-    activateVehicle,
     saveVehicleInfo,
     reload: fetchAndApply,
   }

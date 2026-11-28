@@ -8,6 +8,7 @@
 // le relais est une insertion qui réussit (D39), le conflit n'existe que sur
 // erreur déterministe, traitée par l'appelant.
 import { DataError } from '@/repositories/errors'
+import { pickSelectedVehicle } from '@/lib/vehicleSelection'
 import * as kilometersRepository from '@/repositories/kilometersRepository'
 import * as photosRepository from '@/repositories/photosRepository'
 import * as tripsRepository from '@/repositories/tripsRepository'
@@ -55,14 +56,16 @@ export const freshTripCloseProgress = (): TripCloseProgress => ({
 
 async function resolveVehicleId(current: string | null): Promise<string> {
   if (current) return current
-  const active = await vehiclesRepository.getActiveVehicle()
-  if (!active) {
+  // Pas de véhicule figé à la mise en file : le choix du navigateur qui
+  // synchronise (D44) — la base ne porte plus de véhicule « actif ».
+  const selected = pickSelectedVehicle(await vehiclesRepository.listVehicles())
+  if (!selected) {
     throw new DataError(
       'not_found',
-      'Aucun véhicule actif — l\u2019administrateur doit en activer un.',
+      'Aucun véhicule dans la flotte — prévenez l\u2019administrateur.',
     )
   }
-  return active.id
+  return selected.id
 }
 
 /**
@@ -155,9 +158,10 @@ export async function syncTripOpen(
 /**
  * Clôturer une sortie (D34) : relevé d'arrivée (sous D6, comme toute
  * insertion), photo, puis UPDATE `trips` — idempotent au rejeu à l'identique
- * (trigger M9). Le véhicule du relevé d'arrivée est le véhicule actif à
- * l'envoi : en cas de divergence avec le véhicule de la sortie (bascule admin
- * entre-temps), c'est le trigger qui tranche.
+ * (trigger M9). Le véhicule du relevé d'arrivée est celui résolu à l'envoi
+ * (choix du navigateur qui synchronise, D44) : en cas de divergence avec le
+ * véhicule de la sortie (deux navigateurs sur deux véhicules), c'est le
+ * trigger qui tranche.
  */
 export async function syncTripClose(
   input: {
