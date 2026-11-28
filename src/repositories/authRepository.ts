@@ -10,6 +10,9 @@ export type { ProfileRole }
 export type AuthUser = {
   id: string
   email: string | null
+  /** Nom lisible quand le fournisseur l'a fourni (OAuth Google :
+   * `user_metadata.full_name`) ; null sinon — l'UI retombe sur l'email (D27). */
+  name: string | null
 }
 
 export type AuthErrorCode =
@@ -60,8 +63,20 @@ function appUrl(hash: string): string {
   return `${window.location.origin}${base}${hash}`
 }
 
-function toAuthUser(user: { id: string; email?: string }): AuthUser {
-  return { id: user.id, email: user.email ?? null }
+function toAuthUser(user: {
+  id: string
+  email?: string
+  user_metadata?: Record<string, unknown>
+}): AuthUser {
+  const fullName = user.user_metadata?.full_name
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    name:
+      typeof fullName === 'string' && fullName.trim() !== ''
+        ? fullName.trim()
+        : null,
+  }
 }
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
