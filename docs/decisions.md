@@ -470,3 +470,15 @@ relevé de départ, libellé D27). Le verdict « vivante » est **monté dans le
 hook** (`isLiveTrip`, `useTrips`) : historique et dashboard partagent la
 même règle (ni annulée D36, ni supprimée par contagion D33) — jamais
 réécrite dans un composant.
+
+### D43 — Le graphique d'évolution quitte le dashboard pour l'historique
+
+Amendement de D38 (emplacement uniquement) : la carte « Évolution du
+compteur » (Recharts, D12) est déplacée du dashboard vers l'historique,
+au-dessus de la liste des sorties. Les points ne changent pas — la
+chronologie native `kilometers` vivante (arrivées + départ de la sortie
+ouverte) ; le toggle admin « voir les suppressions » n'affecte donc pas la
+courbe (les lignes mortes sont filtrées à l'entrée de la carte). Le
+dashboard garde le dernier km connu et les cartes de sorties (D38/D42) ;
+l'historique se nourrit de `trips.readings`, déjà chargé par `useTrips`,
+sans requête supplémentaire. Composite : `features/history/OdometerChartCard`.

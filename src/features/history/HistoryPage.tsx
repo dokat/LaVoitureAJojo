@@ -4,7 +4,9 @@
 // les sorties ANNULÉES (D36), et filtre « par utilisateur » (D8), appliqué à
 // l'auteur du départ. Un membre ne voit jamais les lignes mortes : la liste
 // est filtrée à l'affichage (la base autorise la lecture, D27). Les actions
-// sont par agrégat (D33/D37), jamais par relevé isolé.
+// sont par agrégat (D33/D37), jamais par relevé isolé. D43 (2026-11-28) :
+// le graphique d'évolution Recharts (D12) a quitté le dashboard pour ici —
+// les points restent la chronologie native `kilometers` vivante.
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,6 +23,7 @@ import { useActiveVehicle } from '@/hooks/useActiveVehicle'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfiles } from '@/hooks/useProfiles'
 import { isLiveTrip, useTrips } from '@/hooks/useTrips'
+import { OdometerChartCard } from '@/features/history/OdometerChartCard'
 import { TripRow } from '@/features/history/TripRow'
 
 export function HistoryPage() {
@@ -53,6 +56,13 @@ export function HistoryPage() {
     [trips.entries],
   )
   const deadCount = trips.entries.length - liveCount
+
+  // Le graphe (D43) suit la chronologie vivante, pas le toggle admin : les
+  // lignes mortes que useTrips charge toujours (D37) sont retirées ici.
+  const liveReadings = useMemo(
+    () => trips.readings.filter((reading) => reading.deletedAt === null),
+    [trips.readings],
+  )
 
   // Le hook passe par « idle » tant que le véhicule n'est pas résolu, puis
   // charge sans repasser par « loading » : on traite ce moment comme un
@@ -137,6 +147,8 @@ export function HistoryPage() {
           </Select>
         </div>
       )}
+
+      <OdometerChartCard readings={liveReadings} />
 
       {visible.length === 0 && (
         <p className="py-8 text-center text-sm text-muted-foreground">

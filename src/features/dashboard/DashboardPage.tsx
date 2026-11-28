@@ -1,14 +1,12 @@
-// Dashboard (D4, D38) : dernier km connu, dernier relevé, graphique d'évolution
-// Recharts (D12) — inchangé depuis M5 : les points restent la chronologie
-// native `kilometers` (vivants). Milestone 11 : s'il existe une SORTIE EN
-// COURS (D35, au plus une), une carte la montre (départ, depuis quand, qui)
-// avec le bouton Terminer — l'accès principal à la clôture, qui mène au
-// formulaire de /saisie. Le CTA hors sortie devient « Démarrer une sortie ».
-// D42 : carte « Dernières sorties » — les 2 dernières sorties clôturées, en
-// condensé (distance, extrémités km + date, auteur), lien vers l'historique.
+// Dashboard (D4, D38) : dernier km connu, dernier relevé. Milestone 11 : s'il
+// existe une SORTIE EN COURS (D35, au plus une), une carte la montre (départ,
+// depuis quand, qui) avec le bouton Terminer — l'accès principal à la clôture,
+// qui mène au formulaire de /saisie. Le CTA hors sortie devient « Démarrer une
+// sortie ». D42 : carte « Dernières sorties » — les 2 dernières sorties
+// clôturées, en condensé (distance, extrémités km + date, auteur), lien vers
+// l'historique. Le graphique d'évolution est parti dans l'historique (D43).
 import { Link } from 'react-router'
 import { useMemo } from 'react'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -18,29 +16,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart'
 import { Badge } from '@/components/ui/badge'
 import { useProfiles } from '@/hooks/useProfiles'
 import { useReadings } from '@/hooks/useReadings'
 import { isLiveTrip, useTrips } from '@/hooks/useTrips'
 import { RecentTripsCard } from '@/features/dashboard/RecentTripsCard'
 import { formatDateTime, formatKm } from '@/lib/format'
-
-const chartConfig = {
-  km: { label: 'Kilométrage', color: 'var(--chart-2)' },
-} satisfies ChartConfig
-
-// Le graphique se lit dans l'ordre chronologique, la liste de useReadings
-// est du plus récent au plus ancien : on inverse pour l'affichage.
-const chartDataOf = (readings: { km: number; readingAt: Date }[]) =>
-  [...readings]
-    .reverse()
-    .map((reading) => ({ ts: reading.readingAt.getTime(), km: reading.km }))
 
 export function DashboardPage() {
   const { status, error, vehicle, readings, reload } = useReadings()
@@ -80,8 +61,6 @@ export function DashboardPage() {
       </div>
     )
   }
-
-  const chartData = chartDataOf(readings)
 
   return (
     <div className="grid gap-4">
@@ -145,57 +124,6 @@ export function DashboardPage() {
       {recentTrips.length > 0 && (
         <RecentTripsCard entries={recentTrips} labelOf={labelOf} />
       )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Évolution du compteur</CardTitle>
-          <CardDescription>
-            {readings.length > 1
-              ? `Depuis le ${formatDateTime(readings[readings.length - 1].readingAt)}`
-              : 'Ajoutez des sorties pour voir la courbe'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChartContainer config={chartConfig} className="min-h-48 w-full">
-            <AreaChart data={chartData} margin={{ left: 4, right: 4 }}>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="ts"
-                type="number"
-                scale="time"
-                domain={['dataMin', 'dataMax']}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value: number) =>
-                  new Intl.DateTimeFormat('fr-FR', {
-                    month: 'short',
-                    year: '2-digit',
-                  }).format(new Date(value))
-                }
-                minTickGap={24}
-              />
-              <YAxis
-                dataKey="km"
-                width={56}
-                tickLine={false}
-                axisLine={false}
-                domain={['dataMin', 'dataMax']}
-                tickFormatter={(value: number) => formatKm(value)}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Area
-                dataKey="km"
-                type="monotone"
-                fill="var(--color-km)"
-                fillOpacity={0.15}
-                stroke="var(--color-km)"
-                strokeWidth={2}
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ChartContainer>
-        </CardContent>
-      </Card>
     </div>
   )
 }
