@@ -68,7 +68,12 @@ vi.mock('@/lib/images', async (importOriginal) => ({
 import { DataError } from '@/repositories/errors'
 import type { Reading } from '@/schemas/kilometers'
 import type { Trip } from '@/schemas/trips'
-import { useTrips, isLiveTrip, validateTripOrder } from '@/hooks/useTrips'
+import {
+  useTrips,
+  isLiveTrip,
+  sortByTripDateDesc,
+  validateTripOrder,
+} from '@/hooks/useTrips'
 import type { TripEntry } from '@/hooks/useTrips'
 
 const VEHICLE_ID = '11111111-1111-4111-8111-111111111111'
@@ -233,6 +238,83 @@ describe('useTrips — lecture et enrichissement (D38)', () => {
     expect(mocks.listReadings).toHaveBeenCalledWith(VEHICLE_ID, {
       includeDeleted: true,
     })
+  })
+
+  it('rétro-saisie (D31) : la sortie reste à SA date, pas en tête (D45)', async () => {
+    // Ordre du repository (created_at desc) : la rétro insérée hier passe
+    // AVANT la sortie d'hier — c'est exactement le bug remonté.
+    mocks.fetchTrips.mockResolvedValue([
+      trip({
+        id: 't-retro',
+        startReadingId: 'r-retro',
+        createdAt: new Date('2026-11-28T09:00:00Z'),
+      }),
+      trip({
+        id: 't-hier',
+        startReadingId: 'r-hier',
+        createdAt: new Date('2026-11-27T09:00:00Z'),
+      }),
+    ])
+    mocks.listReadings.mockResolvedValue([
+      reading({ id: 'r-hier', readingAt: new Date('2026-11-27T08:00:00Z') }),
+      reading({ id: 'r-retro', readingAt: new Date('2026-11-20T08:00:00Z') }),
+    ])
+    const { result } = await mounted()
+    expect(result.current.entries.map((e) => e.trip.id)).toEqual([
+      't-hier',
+      't-retro',
+    ])
+  })
+})
+
+describe('sortByTripDateDesc — chronologie d’affichage des sorties (D45)', () => {
+  it('trie par date de départ (reading_at, D14), jamais par date d’insertion', () => {
+    const recent = tripEntry({
+      trip: { id: 't1', createdAt: new Date('2026-11-26T09:00:00Z') },
+      start: reading({ id: 'r1', readingAt: new Date('2026-11-26T08:00:00Z') }),
+    })
+    const retro = tripEntry({
+      trip: { id: 't2', createdAt: new Date('2026-11-28T09:00:00Z') },
+      start: reading({ id: 'r2', readingAt: new Date('2026-11-20T08:00:00Z') }),
+    })
+    const input = [retro, recent]
+    expect(sortByTripDateDesc(input).map((e) => e.trip.id)).toEqual([
+      't1',
+      't2',
+    ])
+    // L'entrée n'est pas mutée (les appelants useMemo s'en accommodent).
+    expect(input.map((e) => e.trip.id)).toEqual(['t2', 't1'])
+  })
+
+  it('départs à la même date : l’ordre d’insertion départage', () => {
+    const same = new Date('2026-11-26T08:00:00Z')
+    const a = tripEntry({
+      trip: { id: 'ta', createdAt: new Date('2026-11-26T08:00:01Z') },
+      start: reading({ id: 'ra', readingAt: same }),
+    })
+    const b = tripEntry({
+      trip: { id: 'tb', createdAt: new Date('2026-11-26T08:00:02Z') },
+      start: reading({ id: 'rb', readingAt: same }),
+    })
+    expect(sortByTripDateDesc([a, b]).map((e) => e.trip.id)).toEqual([
+      'tb',
+      'ta',
+    ])
+  })
+
+  it('relevé de départ introuvable : repli sur trips.created_at', () => {
+    const orphan = tripEntry({
+      trip: { id: 't-orphan', createdAt: new Date('2026-11-21T08:00:00Z') },
+      start: null,
+    })
+    const dated = tripEntry({
+      trip: { id: 't-dated', createdAt: new Date('2026-11-28T09:00:00Z') },
+      start: reading({ id: 'rd', readingAt: new Date('2026-11-26T08:00:00Z') }),
+    })
+    expect(sortByTripDateDesc([orphan, dated]).map((e) => e.trip.id)).toEqual([
+      't-dated',
+      't-orphan',
+    ])
   })
 })
 

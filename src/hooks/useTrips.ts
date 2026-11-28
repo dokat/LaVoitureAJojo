@@ -53,6 +53,25 @@ export type TripEndpointInput = {
   photo?: Blob | null
 }
 
+/** Date affichée d'une sortie : son départ (reading_at, D14), pas la ligne
+ * `trips` dont `created_at` est l'insertion en base (rétro-saisie D31, renvoi
+ * hors-ligne D39). Repli sur `created_at` si le relevé est introuvable. */
+function tripDate(entry: TripEntry): Date {
+  return entry.startReading?.readingAt ?? entry.trip.createdAt
+}
+
+/** Sorties rendues par chronologie, la plus récente en premier (D45). Le tri
+ * SQL (`trips.created_at` desc) est l'ordre d'insertion : une sortie
+ * rétro-saisie ou renvoyée hors-ligne remonterait en tête alors que sa date
+ * affichée est ancienne. À dates de départ égales, l'insertion départage. */
+export function sortByTripDateDesc(entries: TripEntry[]): TripEntry[] {
+  return [...entries].sort(
+    (a, b) =>
+      tripDate(b).getTime() - tripDate(a).getTime() ||
+      b.trip.createdAt.getTime() - a.trip.createdAt.getTime(),
+  )
+}
+
 /** Vivante : ni annulée (D36), ni supprimée par contagion des relevés (D33).
  * Verdict partagé par toutes les vues membres (historique M11, carte
  * « dernières sorties » du dashboard) — le toggle admin reste un affichage. */
@@ -209,23 +228,29 @@ export function useTrips(vehicleId: string | null) {
     [readings],
   )
 
-  /** Jonction par id — pas de jointure SQL (consigne M10). */
+  /** Jonction par id — pas de jointure SQL (consigne M10) — puis tri par la
+   * date affichée (D45) : l'ordre `created_at` du repository n'est pas la
+   * chronologie (rétro-saisie D31, renvoi hors-ligne D39). */
   const entries = useMemo<TripEntry[]>(
     () =>
-      trips.map((trip) => {
-        const startReading = readingsById.get(trip.startReadingId) ?? null
-        const endReading = trip.endReadingId
-          ? (readingsById.get(trip.endReadingId) ?? null)
-          : null
-        return {
-          trip,
-          startReading,
-          endReading,
-          distanceKm:
-            startReading && endReading ? endReading.km - startReading.km : null,
-          isOpen: trip.endReadingId === null && trip.cancelledAt === null,
-        }
-      }),
+      sortByTripDateDesc(
+        trips.map((trip) => {
+          const startReading = readingsById.get(trip.startReadingId) ?? null
+          const endReading = trip.endReadingId
+            ? (readingsById.get(trip.endReadingId) ?? null)
+            : null
+          return {
+            trip,
+            startReading,
+            endReading,
+            distanceKm:
+              startReading && endReading
+                ? endReading.km - startReading.km
+                : null,
+            isOpen: trip.endReadingId === null && trip.cancelledAt === null,
+          }
+        }),
+      ),
     [trips, readingsById],
   )
 

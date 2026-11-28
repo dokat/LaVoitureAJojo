@@ -31,8 +31,8 @@ export function DashboardPage() {
   // km connu » (D38), qui est le départ de la sortie ouverte s'il y en a une.
   const latest = readings[0] ?? null
   const openEntry = trips.openTrip
-  // Les 2 dernières sorties vécues (D42) : `entries` est déjà du plus récent
-  // au plus ancien (created_at desc, repository) ; les mortes sont masquées
+  // Les 2 dernières sorties vécues (D42) : `entries` est déjà trié par date de
+  // sortie, la plus récente en premier (D45, hook) ; les mortes sont masquées
   // (isLiveTrip) et la sortie en cours a sa propre carte (D35).
   const recentTrips = useMemo(
     () =>

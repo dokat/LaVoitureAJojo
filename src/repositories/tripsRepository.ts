@@ -19,7 +19,9 @@ function toTrip(row: TripRowInput): Trip {
   return tripRowSchema.parse(row)
 }
 
-/** Historique des sorties d'un véhicule, de la plus récente à la plus ancienne. */
+/** Historique des sorties d'un véhicule, ordre d'INSERTION du plus récent au
+ * plus ancien — pas la chronologie (D14) : le tri par date de sortie se fait à
+ * la jonction des relevés, dans `useTrips` (D45). */
 export async function fetchTrips(vehicleId: string): Promise<Trip[]> {
   const { data, error } = await supabase
     .from('trips')

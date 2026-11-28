@@ -521,3 +521,28 @@ localStorage du navigateur**, sans aucune écriture Supabase.
   par `vehicle_id` (rien à changer de ce côté).
 - D26/D24 : le schéma zod `Vehicle` et les types générés perdent `is_active`
   (régénération après la migration).
+
+## 16. Chronologie d'affichage des sorties (2026-11-28, session corrective)
+
+### D45 — L'historique est trié par date de sortie, pas par date d'insertion
+
+Bug produit remonté (2e fois) : dans l'historique, les sorties n'apparaissent
+pas dans l'ordre des dates affichées. Cause : `fetchTrips` triait sur
+`trips.created_at` — la date d'**insertion de la ligne**, pas la date de la
+sortie. Une rétro-saisie (D31) ou un renvoi hors-ligne (D13/D39) crée donc une
+ligne « récente » en base mais ancienne à l'écran : elle remontait en tête.
+
+- **Règle** : la liste des sorties est triée par **date de départ du relevé**
+  (`reading_at`, D14 — la date que la ligne affiche), la plus récente en
+  premier ; `trips.created_at` ne sert que de repli (relevé introuvable) et de
+  départage (départs à la même date). C'est le même critère que la
+  chronologie des relevés (`listReadings` : `reading_at` puis `created_at`).
+- Le tri vit **dans le hook** (`sortByTripDateDesc`, `useTrips.entries`) : la
+  date de départ n'est connue qu'après la jonction par id (consigne M10, pas
+  de jointure SQL), et le repository garde son ordre SQL comme défaut stable.
+- **D42 précisée** : « les 2 dernières sorties » du dashboard se lit par la
+  même clé — la récence affichée est la date de sortie, plus celle de
+  l'insertion (la mention « récence `created_at`, repository » visait
+  l'ordre de lecture, pas le critère de récence).
+- Test : `sortByTripDateDesc` (3 cas purs) + régression hook « rétro-saisie
+  reste à sa date ».
