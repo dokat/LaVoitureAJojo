@@ -4,7 +4,10 @@
 // COURS (D35, au plus une), une carte la montre (départ, depuis quand, qui)
 // avec le bouton Terminer — l'accès principal à la clôture, qui mène au
 // formulaire de /saisie. Le CTA hors sortie devient « Démarrer une sortie ».
+// D42 : carte « Dernières sorties » — les 2 dernières sorties clôturées, en
+// condensé (distance, extrémités km + date, auteur), lien vers l'historique.
 import { Link } from 'react-router'
+import { useMemo } from 'react'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,7 +27,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { useProfiles } from '@/hooks/useProfiles'
 import { useReadings } from '@/hooks/useReadings'
-import { useTrips } from '@/hooks/useTrips'
+import { isLiveTrip, useTrips } from '@/hooks/useTrips'
+import { RecentTripsCard } from '@/features/dashboard/RecentTripsCard'
 import { formatDateTime, formatKm } from '@/lib/format'
 
 const chartConfig = {
@@ -46,6 +50,16 @@ export function DashboardPage() {
   // km connu » (D38), qui est le départ de la sortie ouverte s'il y en a une.
   const latest = readings[0] ?? null
   const openEntry = trips.openTrip
+  // Les 2 dernières sorties vécues (D42) : `entries` est déjà du plus récent
+  // au plus ancien (created_at desc, repository) ; les mortes sont masquées
+  // (isLiveTrip) et la sortie en cours a sa propre carte (D35).
+  const recentTrips = useMemo(
+    () =>
+      trips.entries
+        .filter((entry) => isLiveTrip(entry) && !entry.isOpen)
+        .slice(0, 2),
+    [trips.entries],
+  )
 
   if (status === 'loading') {
     return (
@@ -126,6 +140,10 @@ export function DashboardPage() {
         <Button asChild size="lg" className="w-full">
           <Link to="/saisie">Démarrer une sortie</Link>
         </Button>
+      )}
+
+      {recentTrips.length > 0 && (
+        <RecentTripsCard entries={recentTrips} labelOf={labelOf} />
       )}
 
       <Card>

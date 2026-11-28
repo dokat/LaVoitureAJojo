@@ -456,3 +456,17 @@ La bascule est découpée en trois sessions (extensibles si l'une dérive en tai
 (repositories, schemas zod, hooks, offline), **M11** UI (ouvrir/clôturer,
 historique par sortie, dashboard, admin). Détail du contrat d'interface dans
 `plan-execution.md`.
+
+## 14. Clarifications d'implémentation (2026-11-28)
+
+### D42 — Carte « Dernières sorties » du dashboard
+
+Le dashboard montre les **2 dernières sorties clôturées** (récence
+`created_at`, repository ; la sortie en cours a déjà sa carte D35).
+Contrairement à l'historique (D38), affichage condensé sans actions ni
+photos : distance totale (`km_arrivée − km_départ`), départ (km + date),
+arrivée (km + date) et l'auteur qui a enregistré la sortie (utilisateur du
+relevé de départ, libellé D27). Le verdict « vivante » est **monté dans le
+hook** (`isLiveTrip`, `useTrips`) : historique et dashboard partagent la
+même règle (ni annulée D36, ni supprimée par contagion D33) — jamais
+réécrite dans un composant.

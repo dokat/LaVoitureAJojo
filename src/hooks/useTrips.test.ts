@@ -68,7 +68,8 @@ vi.mock('@/lib/images', async (importOriginal) => ({
 import { DataError } from '@/repositories/errors'
 import type { Reading } from '@/schemas/kilometers'
 import type { Trip } from '@/schemas/trips'
-import { useTrips, validateTripOrder } from '@/hooks/useTrips'
+import { useTrips, isLiveTrip, validateTripOrder } from '@/hooks/useTrips'
+import type { TripEntry } from '@/hooks/useTrips'
 
 const VEHICLE_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -97,6 +98,33 @@ const trip = (overrides: Partial<Trip> = {}): Trip => ({
   createdAt: new Date('2026-11-26T08:00:00Z'),
   ...overrides,
 })
+
+/** TripEntry de main (pour les tests purs d'isLiveTrip, sans hook). */
+function tripEntry(
+  opts: {
+    trip?: Partial<Trip>
+    start?: Reading | null
+    end?: Reading | null
+  } = {},
+): TripEntry {
+  const t = trip(opts.trip)
+  const startReading =
+    opts.start === undefined ? reading({ id: 'r-start' }) : opts.start
+  const endReading =
+    opts.end === undefined
+      ? t.endReadingId
+        ? reading({ id: t.endReadingId, km: 50300 })
+        : null
+      : opts.end
+  return {
+    trip: t,
+    startReading,
+    endReading,
+    distanceKm:
+      startReading && endReading ? endReading.km - startReading.km : null,
+    isOpen: t.endReadingId === null && t.cancelledAt === null,
+  }
+}
 
 function setOnline(value: boolean): void {
   Object.defineProperty(window.navigator, 'onLine', {
@@ -559,5 +587,51 @@ describe('validateTripOrder — règle interne D34 pure', () => {
     )
     expect(verdict).toMatchObject({ ok: false, code: 'trip_relay_conflict' })
     if (!verdict.ok) expect(verdict.message).toMatch(/sortie en cours/)
+  })
+})
+
+describe('isLiveTrip — verdict « vivante » partagé des vues (D33/D36)', () => {
+  it('sortie clôturée aux deux relevés sains : vivante', () => {
+    expect(isLiveTrip(tripEntry({ trip: { endReadingId: 'r-end' } }))).toBe(
+      true,
+    )
+  })
+
+  it('sortie en cours : vivante (son exclusion du condensé relève d’isOpen, D42)', () => {
+    expect(isLiveTrip(tripEntry())).toBe(true)
+  })
+
+  it('annulée (D36) : morte', () => {
+    expect(
+      isLiveTrip(
+        tripEntry({ trip: { cancelledAt: new Date('2026-11-26T15:00:00Z') } }),
+      ),
+    ).toBe(false)
+  })
+
+  it('départ soft-deleted par contagion (D33) : morte', () => {
+    expect(
+      isLiveTrip(
+        tripEntry({
+          trip: { endReadingId: 'r-end' },
+          start: reading({ id: 'r-start', deletedAt: new Date() }),
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('arrivée soft-deleted alors que le départ vit : morte (D37, restauration par agrégat)', () => {
+    expect(
+      isLiveTrip(
+        tripEntry({
+          trip: { endReadingId: 'r-end' },
+          end: reading({ id: 'r-end', km: 50300, deletedAt: new Date() }),
+        }),
+      ),
+    ).toBe(false)
+  })
+
+  it('relevé de départ introuvable : morte', () => {
+    expect(isLiveTrip(tripEntry({ start: null }))).toBe(false)
   })
 })

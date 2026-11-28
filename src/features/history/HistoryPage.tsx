@@ -20,18 +20,8 @@ import {
 import { useActiveVehicle } from '@/hooks/useActiveVehicle'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfiles } from '@/hooks/useProfiles'
-import { useTrips, type TripEntry } from '@/hooks/useTrips'
+import { isLiveTrip, useTrips } from '@/hooks/useTrips'
 import { TripRow } from '@/features/history/TripRow'
-
-/** Vivante : ni annulée (D36), ni supprimée par contagion des relevés (D33). */
-function isLive(entry: TripEntry): boolean {
-  if (entry.trip.cancelledAt !== null) return false
-  if (entry.startReading === null || entry.startReading.deletedAt !== null) {
-    return false
-  }
-  if (entry.trip.endReadingId === null) return true
-  return entry.endReading !== null && entry.endReading.deletedAt === null
-}
 
 export function HistoryPage() {
   const { user, isAdmin } = useAuth()
@@ -48,7 +38,7 @@ export function HistoryPage() {
   const visible = useMemo(() => {
     let entries = trips.entries
     if (!isAdmin || !showDeleted) {
-      entries = entries.filter(isLive)
+      entries = entries.filter(isLiveTrip)
     }
     if (isAdmin && filterUserId) {
       entries = entries.filter(
@@ -59,7 +49,7 @@ export function HistoryPage() {
   }, [trips.entries, isAdmin, showDeleted, filterUserId])
 
   const liveCount = useMemo(
-    () => trips.entries.filter((entry) => isLive(entry)).length,
+    () => trips.entries.filter((entry) => isLiveTrip(entry)).length,
     [trips.entries],
   )
   const deadCount = trips.entries.length - liveCount

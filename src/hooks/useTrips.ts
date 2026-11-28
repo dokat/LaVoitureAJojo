@@ -53,6 +53,18 @@ export type TripEndpointInput = {
   photo?: Blob | null
 }
 
+/** Vivante : ni annulée (D36), ni supprimée par contagion des relevés (D33).
+ * Verdict partagé par toutes les vues membres (historique M11, carte
+ * « dernières sorties » du dashboard) — le toggle admin reste un affichage. */
+export function isLiveTrip(entry: TripEntry): boolean {
+  if (entry.trip.cancelledAt !== null) return false
+  if (entry.startReading === null || entry.startReading.deletedAt !== null) {
+    return false
+  }
+  if (entry.trip.endReadingId === null) return true
+  return entry.endReading !== null && entry.endReading.deletedAt === null
+}
+
 export type StartTripResult =
   | { ok: true; tripId: string | null; photoError?: DataError }
   /** Ouverture mise en file (D39) : rien en base encore, tout est local. */
