@@ -10,15 +10,8 @@
 // le sélecteur de l'en-tête le change ici, pour cet appareil seulement.
 import { Link, NavLink, Outlet } from 'react-router'
 import { cn } from 'cn'
-import { Car, CloudOff, Gauge, History, Plus } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { CloudOff, Gauge, History, Plus } from 'lucide-react'
+import { VehicleSelect } from '@/components/VehicleSelect'
 import { useAuth } from '@/hooks/useAuth'
 import { useActiveVehicle } from '@/hooks/useActiveVehicle'
 import { usePendingQueue } from '@/hooks/usePendingQueue'
@@ -49,25 +42,11 @@ export function AppShell() {
             {vehicle ? (
               // D44 : le nom du véhicule est le sélecteur DE CE NAVIGATEUR —
               // le choix part le changer ici, jamais dans la base.
-              <Select value={vehicle.id} onValueChange={selectVehicle}>
-                <SelectTrigger
-                  size="sm"
-                  aria-label="Choisir le véhicule de ce navigateur"
-                  title={`${vehicle.brand} ${vehicle.model}`}
-                  className="h-auto min-w-0 flex-1 justify-start gap-1 border-0 bg-transparent px-1 text-xs font-normal text-muted-foreground shadow-none"
-                >
-                  <Car className="size-3.5 shrink-0" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectLabel>Véhicules (choix de ce navigateur)</SelectLabel>
-                  {fleet.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.brand} {option.model}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <VehicleSelect
+                vehicle={vehicle}
+                fleet={fleet}
+                onSelect={selectVehicle}
+              />
             ) : (
               <span className="flex-1" />
             )}
