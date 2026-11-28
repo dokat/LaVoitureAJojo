@@ -2,6 +2,8 @@
 // (milestone 5 : dashboard, historique, saisie ; compte = écran D8/M3).
 // Milestone 6 : /admin/vehicules, sous garde RequireAdmin (D8).
 // Milestone 7 : /en-attente, écran de la file hors-ligne (D13).
+// Milestone 11 : /saisie est le FLUX SORTIE (D31) — le formulaire de relevé
+// brut a disparu, la saisie passe par ouvrir/clôturer une sortie.
 // basename = BASE_URL pour que react-router fonctionne aussi sous le
 // sous-chemin GitHub Pages /<dépôt>/ (D17, notes milestone 8).
 import { BrowserRouter, Route, Routes } from 'react-router'
@@ -15,7 +17,7 @@ import { RequireAuth } from '@/features/auth/RequireAuth'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { HistoryPage } from '@/features/history/HistoryPage'
 import { PendingPage } from '@/features/offline/PendingPage'
-import { AddReadingPage } from '@/features/readings/AddReadingPage'
+import { TripFormPage } from '@/features/trips/TripFormPage'
 import { VehiclesAdminPage } from '@/features/vehicle/VehiclesAdminPage'
 
 function App() {
@@ -33,7 +35,7 @@ function App() {
             }
           >
             <Route index element={<DashboardPage />} />
-            <Route path="saisie" element={<AddReadingPage />} />
+            <Route path="saisie" element={<TripFormPage />} />
             <Route path="historique" element={<HistoryPage />} />
             <Route path="en-attente" element={<PendingPage />} />
             <Route path="compte" element={<AccountPage />} />

@@ -1,8 +1,9 @@
-// Écran « items en attente » (milestone 7, D13) : vitrine de la file
-// IndexedDB. Chaque item porte son état — « en attente » ou « en attente —
-// conflit » avec le message de la base — et deux issues explicites :
-// modifier (re-synchronise) ou abandonner (confirmé, jamais silencieux).
-// La photo est un Blob local : aperçu via object URL, jamais une signed URL.
+// Écran « items en attente » (milestone 7, D13 ; intentions sortie M10/M11,
+// D39) : vitrine de la file IndexedDB. Chaque item porte son état — « en
+// attente » ou « en attente — conflit » avec le message de la base — et deux
+// issues explicites : modifier (re-synchronise) ou abandonner (confirmé,
+// jamais silencieux). La photo est un Blob local : aperçu via object URL,
+// jamais une signed URL.
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { CloudOff, RefreshCw } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -235,8 +236,8 @@ function EditDialog({ item }: { item: PendingReading }) {
 }
 
 // D39 : un item de file peut porter une INTENTION sortie, pas seulement un
-// relevé. Le libellé branching est la part M10 de l'écran ; le formulaire de
-// sortie complet (ouverture, clôture, relais confirmé) est le sujet du M11.
+// relevé. Les formulaires sortie (ouverture, clôture, relais confirmé) vivent
+// dans features/trips depuis M11 — cet écran n'est que la vitrine de la file.
 const INTENT_LABEL: Record<PendingIntent, string> = {
   reading: 'Relevé',
   tripOpen: 'Sortie — ouverture',
@@ -367,7 +368,8 @@ export function PendingPage() {
       <CardHeader>
         <CardTitle>Items en attente</CardTitle>
         <CardDescription>
-          Les relevés saisis hors-ligne partent à la première connexion.
+          Relevés et intentions sortie (ouverture, clôture, annulation) saisis
+          hors-ligne partent à la première connexion, dans l’ordre d’entrée.
         </CardDescription>
       </CardHeader>
 

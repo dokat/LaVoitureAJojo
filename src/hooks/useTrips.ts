@@ -251,7 +251,11 @@ export function useTrips(vehicleId: string | null) {
           ),
         }
       }
-      if (!vehicleId) {
+      // Véhicule inconnu (montage hors-ligne, échec de résolution réseau) : en
+      // ligne c'est une erreur déterministe — la page n'a rien à envoyer.
+      // Hors-ligne, on ne bloque pas : l'item file avec `vehicleId: null` et
+      // le synchroniseur résoudra le véhicule actif au renvoi (patron M7).
+      if (!vehicleId && navigator.onLine) {
         return {
           ok: false,
           error: new DataError(

@@ -1,6 +1,9 @@
-// Dashboard v1 (D4) : dernier kilométrage, dernier relevé, graphique
-// d'évolution Recharts (D12) et accès à la saisie. Les données viennent de
-// useReadings ; la page ne fait que les mettre en forme.
+// Dashboard (D4, D38) : dernier km connu, dernier relevé, graphique d'évolution
+// Recharts (D12) — inchangé depuis M5 : les points restent la chronologie
+// native `kilometers` (vivants). Milestone 11 : s'il existe une SORTIE EN
+// COURS (D35, au plus une), une carte la montre (départ, depuis quand, qui)
+// avec le bouton Terminer — l'accès principal à la clôture, qui mène au
+// formulaire de /saisie. Le CTA hors sortie devient « Démarrer une sortie ».
 import { Link } from 'react-router'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
@@ -8,6 +11,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
@@ -18,7 +22,9 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart'
 import { Badge } from '@/components/ui/badge'
+import { useProfiles } from '@/hooks/useProfiles'
 import { useReadings } from '@/hooks/useReadings'
+import { useTrips } from '@/hooks/useTrips'
 import { formatDateTime, formatKm } from '@/lib/format'
 
 const chartConfig = {
@@ -34,9 +40,12 @@ const chartDataOf = (readings: { km: number; readingAt: Date }[]) =>
 
 export function DashboardPage() {
   const { status, error, vehicle, readings, reload } = useReadings()
-  // Tri de récence : readings[0] est le dernier relevé (la version complète,
-  // là où lastReading ne porte que km/readingAt pour la validation D6).
+  const trips = useTrips(vehicle?.id ?? null)
+  const { labelOf } = useProfiles()
+  // Tri de récence : readings[0] est le dernier relevé vivant — le « dernier
+  // km connu » (D38), qui est le départ de la sortie ouverte s'il y en a une.
   const latest = readings[0] ?? null
+  const openEntry = trips.openTrip
 
   if (status === 'loading') {
     return (
@@ -85,9 +94,39 @@ export function DashboardPage() {
         )}
       </Card>
 
-      <Button asChild size="lg" className="w-full">
-        <Link to="/saisie">Saisir un relevé</Link>
-      </Button>
+      {openEntry ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sortie en cours</CardTitle>
+            <CardDescription>
+              Départ {formatKm(openEntry.startReading?.km ?? 0)} km le{' '}
+              {formatDateTime(
+                openEntry.startReading?.readingAt ?? openEntry.trip.createdAt,
+              )}{' '}
+              · par{' '}
+              {openEntry.startReading
+                ? labelOf(openEntry.startReading.userId)
+                : 'auteur inconnu'}
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex-col gap-2">
+            <Button asChild size="lg" className="w-full">
+              <Link to="/saisie">Terminer la sortie</Link>
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Ou{' '}
+              <Link to="/saisie" className="underline">
+                gérer les sorties
+              </Link>{' '}
+              — ouverture, annulation, relais (D35).
+            </p>
+          </CardFooter>
+        </Card>
+      ) : (
+        <Button asChild size="lg" className="w-full">
+          <Link to="/saisie">Démarrer une sortie</Link>
+        </Button>
+      )}
 
       <Card>
         <CardHeader>
@@ -95,7 +134,7 @@ export function DashboardPage() {
           <CardDescription>
             {readings.length > 1
               ? `Depuis le ${formatDateTime(readings[readings.length - 1].readingAt)}`
-              : 'Ajoutez des relevés pour voir la courbe'}
+              : 'Ajoutez des sorties pour voir la courbe'}
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -17,7 +17,7 @@ pièges, consignes pour la session suivante).
 | 8   | CI & déploiement    | ✅ terminé        |
 | 9   | Sorties — base SQL  | ✅ terminé        |
 | 10  | Sorties — client    | ✅ terminé        |
-| 11  | Sorties — UI        | ⬜ à venir        |
+| 11  | Sorties — UI        | ✅ terminé        |
 
 ## Milestone 1 — Scaffold ✅
 
@@ -707,35 +707,91 @@ end?})` avec repli rétroactif (D31), confirmation du relais AVANT envoi
   `useTrips`). L'écran de file affiche déjà
   l'intention de chaque item. Véhicule Dev et compte `m5-test` conservés.
 
-## Milestone 11 — Sorties : UI ⬜
+## Milestone 11 — Sorties : UI ✅
 
 Contrat : D30-D39, D38 pour l'affichage.
 
-- [ ] `/saisie` devient le flux sortie : carte « Sortie en cours » (départ,
+- [x] `/saisie` devient le flux sortie : carte « Sortie en cours » (départ,
       depuis quand, qui) avec formulaire **Terminer** ; sinon formulaire
       **Démarrer une sortie** (km + date + photo/essence/notes départ) avec
       repli « sortie rétroactive » (deux blocs départ/arrivée, D31) ;
       le formulaire de relevé brut existant est supprimé
-- [ ] Relais (D35) : détection d'une sortie ouverte par autrui ⇒ confirmation
+- [x] Relais (D35) : détection d'une sortie ouverte par autrui ⇒ confirmation
       explicite (« votre relevé clôturera la sortie en cours de X ») avec
       alert-dialog ; message d'échec typé `TRIP_RELAY_CONFLICT` / D34
       (jamais de blocage silencieux)
-- [ ] Historique par sortie (D38) : ligne = départ → arrivée + distance +
+- [x] Historique par sortie (D38) : ligne = départ → arrivée + distance +
       auteur(s) ; toggle admin « voir les suppressions » inclut annulées
       (D36) ; actions restaurer/supprimer par agrégat (D33/D37) ; graphique
       inchangé
-- [ ] Dashboard (D38) : dernier km connu, carte sortie en cours avec bouton
+- [x] Dashboard (D38) : dernier km connu, carte sortie en cours avec bouton
       **Terminer** ; badge file offline adapté aux intentions sortie
-- [ ] Vérification en réel mobile-first (D11) : ouvrir → clôturer ; relais
+- [x] Vérification en réel mobile-first (D11) : ouvrir → clôturer ; relais
       entre deux comptes ; annulation ; rétro-saisie ; une session hors-ligne
       complète ouverture + clôture avec synchro au retour (patron M7)
-- [ ] `npm run build` + `lint` + `test` au vert ; notes de session écrites
+- [x] `npm run build` + `lint` + `test` au vert ; notes de session écrites
 
 Prérequis : milestone 10.
 
 Notes :
 
-- (à remplir par la session M11)
+- Structure UI nouvelle : feature `features/trips/` (`TripFormPage` route
+  `/saisie`, `StartTripForm` avec interrupteur rétroactif D31 + confirmation
+  relais D35, `CloseTripForm` intégré à la carte en cours, `EndpointFields`
+  = les champs d'une extrémité partagés par les deux formulaires,
+  `endpointForm.ts` = forme pure chaîne→`TripEndpointInput`) ;
+  `features/history/TripRow.tsx` remplace `ReadingRow` ; **supprimés** :
+  `features/readings/AddReadingPage.tsx` (D31) et `ReadingRow`. Nouvelle
+  couche fine : `hooks/useActiveVehicle` (résout le véhicule actif, car
+  `useTrips` prend un `vehicleId` et la flotte n'est pas un store).
+- Le filtre admin « par utilisateur » (D8) s'applique désormais **à l'auteur
+  du départ, côté affichage** (la liste vient de `useTrips`, plus de la liste
+  des relevés) ; le toggle admin est un filtre d'affichage — `useTrips` charge
+  toujours les mortes pour pouvoir montrer et restaurer les sorties par
+  agrégat (D37). Les lignes mortes restent invisibles aux membres à l'écran
+  (la RLS les laisse lisibles, D27).
+- **Écart comblé dans `useTrips`** (deux tests de plus, 133 au total) : la
+  garde « pas de véhicule actif » ne bloque plus le montage hors-ligne — si
+  `vehicleId` est inconnu HORS-ligne, l'ouverture file avec `vehicleId: null`
+  et le synchroniseur résout le véhicule au renvoi (patron M7 explicite,
+  D39) ; en ligne, l'absence de véhicule actif reste une erreur déterministe.
+- Piège d'affichage trouvé EN RÉEL : `useTrips` passe de `idle` à `ready`
+  sans repasser par `loading` quand le vehicleId se résout — l'historique
+  affichait « 0 sortie » avant l'arrivée des données. Garde corrigée dans
+  `HistoryPage`/`TripFormPage` : `idle` avec véhicule prêt = chargement.
+  (Le dashboard est épargné : sa gate vient de `useReadings`, loading direct.)
+- Pièges d'AUTOMATISATION (pas de l'app — un humain au clavier ne les voit
+  pas) : `fill` CDP sur un `datetime-local` ne déclenche pas le `onChange`
+  React → passer par le setter natif + événement `input` ; la nav basse
+  sticky peut masquer un bouton au clic CDP (hit-test) → clic JS direct. À
+  savoir pour les prochaines sessions browser.
+- Vérifié en réel (`vite dev` + browser, véhicule **Dev** activé puis Honda
+  restauré ; zéro erreur console sur toute la session) : ouvrir → clôturer
+  (ligne « 50 km », dashboard 10 077) ; D6 client bloc avant envoi (message
+  du hook) ; D34 date en typé (« une sortie se clôt après son ouverture ») ;
+  annulation avec alerte D36 puis **levée admin** → la sortie rouverte
+  reparaît « en cours » (levée = un UPDATE, vérifié en base) ; rétro-saisie
+  via l'interrupteur D31 → sortie née clôturée 50 km dans le passé ; **relais
+  entre deux comptes** : B voit la carte de A (lecture seule + bannière),
+  confirme dans l'alert-dialog, la base clôture la sortie de A avec LE MÊME
+  relevé 10 100 (distances 23 + 30, somme continue, D30/D35) ; **hors-ligne
+  complet** : ouverture en file (intention « Sortie — ouverture », badge
+  header « 1 en attente · 1 sortie »), synchro au rechargement de la page ;
+  puis clôture en file « Sortie — clôture », reconnexion → `10150→10180` en
+  base, file vide ; suppression par agrégat (les DEUX relevés soft-deletés,
+  zéro écriture sur trips) puis restauration admin qui les ressuscite ;
+  filtre admin par auteur effectif.
+- Fixtures laissées sur le véhicule **Dev** (sans effet sur l'historique
+  Honda, vérifié 0 ligne) : ~7 sorties du scénario ci-dessus, dont une
+  annulée ; bucket `photos` resté vide (aucune photo envoyée en réel — les
+  octets de sortie sont le chemin M10 déjà testé, pas re-vérifié ici).
+  **Nouveau compte membre de test `m11-b@example.com`** (mot de passe copié
+  sur celui de `m5-test` — faible, à changer/supprimer comme son jumeau).
+- Session suivante : plus de milestone au plan — reste la dette générale
+  (purge éventuelle des comptes de test, vérification whitelist Google
+  toujours due depuis M3, `supabase db pull` n'est plus requis : historique
+  aligné depuis M9). Le PWA est à réinstaller en prod pour vérifier
+  l'installabilité avec les nouveaux écrans.
 
 ## Dette / points de vigilance
 

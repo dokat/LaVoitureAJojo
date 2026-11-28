@@ -386,6 +386,32 @@ describe('useTrips.startTrip — hors-ligne (D39)', () => {
       expect.objectContaining({ insertedReadingId: 'r-gone' }),
     )
   })
+
+  it('montage hors-ligne, véhicule inconnu : l’ouverture file quand même — le véhicule se résout au renvoi (patron M7)', async () => {
+    setOnline(false)
+    const view = renderHook(() => useTrips(null))
+    const outcome = await view.result.current.startTrip({
+      start: { km: 60100, readingAt: new Date('2026-11-26T14:00:00Z') },
+    })
+    expect(outcome).toEqual({ ok: true, queued: true })
+    expect(mocks.openTrip).not.toHaveBeenCalled()
+    expect(mocks.pendingAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'tripOpen',
+        vehicleId: null,
+        km: 60100,
+      }),
+    )
+  })
+
+  it('en ligne sans véhicule résolu : refus déterministe, rien en file', async () => {
+    const view = renderHook(() => useTrips(null))
+    const outcome = await view.result.current.startTrip({
+      start: { km: 60100, readingAt: new Date('2026-11-26T14:00:00Z') },
+    })
+    expect(outcome).toMatchObject({ ok: false, error: { code: 'not_found' } })
+    expect(mocks.pendingAdd).not.toHaveBeenCalled()
+  })
 })
 
 describe('useTrips.completeTrip (D34/D39)', () => {

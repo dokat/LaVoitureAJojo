@@ -71,7 +71,7 @@ export function AppShell() {
             <span className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground">
               <Plus className="size-5" />
             </span>
-            Saisir
+            Sortie
           </NavLink>
           <NavLink to="/historique" className={navItemClass}>
             <History className="size-5" />

@@ -1,7 +1,8 @@
 # features/
 
-Découpage par fonctionnalité métier : `auth/`, `readings/`, `dashboard/`,
-`history/`, `offline/`, `vehicle/`.
+Découpage par fonctionnalité métier : `auth/`, `trips/` (flux sortie —
+`saisie` M11 a disparu, remplacé), `dashboard/`, `history/`, `offline/`,
+`vehicle/`.
 
 Règles :
 

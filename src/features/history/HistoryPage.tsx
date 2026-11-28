@@ -1,8 +1,10 @@
-// Historique (M5 + M6) : liste chronologique inversée, photo cliquable (URL
-// signée, D16). Milestone 6 : actions de suppression douce par ligne (auteur
-// ou admin) et contrôles admin — toggle « voir les suppressions » (D7) et
-// filtre « par utilisateur » (D8). Un membre ne voit jamais ces contrôles :
-// l'UI reflète la RLS, elle ne la remplace pas.
+// Historique PAR SORTIE (D38, milestone 11) : une ligne = une sortie (départ →
+// arrivée, distance, auteurs). Milestone 6 repris : contrôles admin visibles
+// des seuls admins — toggle « voir les suppressions », qui inclut désormais
+// les sorties ANNULÉES (D36), et filtre « par utilisateur » (D8), appliqué à
+// l'auteur du départ. Un membre ne voit jamais les lignes mortes : la liste
+// est filtrée à l'affichage (la base autorise la lecture, D27). Les actions
+// sont par agrégat (D33/D37), jamais par relevé isolé.
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,43 +17,86 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useActiveVehicle } from '@/hooks/useActiveVehicle'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfiles } from '@/hooks/useProfiles'
-import { useReadings } from '@/hooks/useReadings'
-import { ReadingRow } from '@/features/history/ReadingRow'
+import { useTrips, type TripEntry } from '@/hooks/useTrips'
+import { TripRow } from '@/features/history/TripRow'
+
+/** Vivante : ni annulée (D36), ni supprimée par contagion des relevés (D33). */
+function isLive(entry: TripEntry): boolean {
+  if (entry.trip.cancelledAt !== null) return false
+  if (entry.startReading === null || entry.startReading.deletedAt !== null) {
+    return false
+  }
+  if (entry.trip.endReadingId === null) return true
+  return entry.endReading !== null && entry.endReading.deletedAt === null
+}
 
 export function HistoryPage() {
   const { user, isAdmin } = useAuth()
   const [showDeleted, setShowDeleted] = useState(false)
   const [filterUserId, setFilterUserId] = useState<string | null>(null)
+  const vehicleView = useActiveVehicle()
   const { profiles, labelOf } = useProfiles()
 
-  // Garde-fou tâche 4 : les filtres admin ne sont effectifs que pour un admin,
-  // y compris si l'état local a été posé avant une rétrogradation de rôle.
-  const { status, error, readings, softDelete, restore, reload } = useReadings({
-    includeDeleted: isAdmin && showDeleted,
-    userId: isAdmin ? filterUserId : null,
-  })
+  // Le hook charge TOUJOURS les mortes (jonction des sorties supprimées, D37) ;
+  // le filtre admin n'est donc qu'affichage — garde-fou : effectif pour un
+  // admin seulement, même si l'état local a survécu à une rétrogradation.
+  const trips = useTrips(vehicleView.vehicle?.id ?? null)
+
+  const visible = useMemo(() => {
+    let entries = trips.entries
+    if (!isAdmin || !showDeleted) {
+      entries = entries.filter(isLive)
+    }
+    if (isAdmin && filterUserId) {
+      entries = entries.filter(
+        (entry) => entry.startReading?.userId === filterUserId,
+      )
+    }
+    return entries
+  }, [trips.entries, isAdmin, showDeleted, filterUserId])
 
   const liveCount = useMemo(
-    () => readings.filter((r) => r.deletedAt === null).length,
-    [readings],
+    () => trips.entries.filter((entry) => isLive(entry)).length,
+    [trips.entries],
   )
+  const deadCount = trips.entries.length - liveCount
 
-  if (status === 'loading') {
+  // Le hook passe par « idle » tant que le véhicule n'est pas résolu, puis
+  // charge sans repasser par « loading » : on traite ce moment comme un
+  // chargement (sinon l'écran vide clignote avant la première liste).
+  if (
+    vehicleView.status === 'loading' ||
+    trips.status === 'loading' ||
+    (vehicleView.status === 'ready' && trips.status === 'idle')
+  ) {
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
         Chargement…
       </p>
     )
   }
-  if (status === 'error') {
+  if (vehicleView.status === 'error') {
     return (
       <div className="grid gap-3 py-8 text-center">
         <p role="alert" className="text-sm text-destructive">
-          {error?.message ?? 'Erreur de chargement.'}
+          {vehicleView.error?.message ?? 'Erreur de chargement.'}
         </p>
-        <Button variant="outline" onClick={() => void reload()}>
+        <Button variant="outline" onClick={() => void vehicleView.reload()}>
+          Réessayer
+        </Button>
+      </div>
+    )
+  }
+  if (trips.status === 'error') {
+    return (
+      <div className="grid gap-3 py-8 text-center">
+        <p role="alert" className="text-sm text-destructive">
+          {trips.error?.message ?? 'Erreur de chargement.'}
+        </p>
+        <Button variant="outline" onClick={() => void trips.reload()}>
           Réessayer
         </Button>
       </div>
@@ -61,11 +106,11 @@ export function HistoryPage() {
   return (
     <div className="grid gap-2">
       <CardHeader>
-        <CardTitle>Historique</CardTitle>
+        <CardTitle>Historique des sorties</CardTitle>
         <CardDescription>
-          {liveCount} relevé{liveCount > 1 ? 's' : ''}
-          {showDeleted && isAdmin
-            ? ` (+ ${readings.length - liveCount} supprimé${readings.length - liveCount > 1 ? 's' : ''})`
+          {visible.length} sortie{visible.length > 1 ? 's' : ''}
+          {showDeleted && isAdmin && deadCount > 0
+            ? ` — dont ${deadCount} masquée${deadCount > 1 ? 's' : ''} pour les membres`
             : ''}
         </CardDescription>
       </CardHeader>
@@ -79,7 +124,7 @@ export function HistoryPage() {
               onCheckedChange={setShowDeleted}
             />
             <Label htmlFor="show-deleted" className="text-sm font-normal">
-              Voir les suppressions
+              Voir les suppressions et annulations
             </Label>
           </div>
           <Select
@@ -103,21 +148,29 @@ export function HistoryPage() {
         </div>
       )}
 
-      {readings.length === 0 && (
+      {visible.length === 0 && (
         <p className="py-8 text-center text-sm text-muted-foreground">
-          Aucun relevé pour l’instant.
+          Aucune sortie pour l’instant — tout se passe ici, au rythme des
+          départs et des arrivées.
         </p>
       )}
-      {readings.map((reading) => (
-        <ReadingRow
-          key={reading.id}
-          reading={reading}
+      {visible.map((entry) => (
+        <TripRow
+          key={entry.trip.id}
+          entry={entry}
           actions={{
-            canDelete: reading.userId === user?.id || isAdmin,
+            canManage:
+              isAdmin ||
+              (entry.startReading !== null &&
+                entry.startReading.userId === user?.id),
             canRestore: isAdmin,
-            authorLabel: isAdmin ? labelOf(reading.userId) : undefined,
-            onDelete: async (id) => (await softDelete(id))?.message ?? null,
-            onRestore: async (id) => (await restore(id))?.message ?? null,
+            labelOf,
+            onCancel: async (tripId) =>
+              (await trips.cancelTrip(tripId))?.message ?? null,
+            onDelete: async (tripId) =>
+              (await trips.deleteTrip(tripId))?.message ?? null,
+            onRestore: async (tripId) =>
+              (await trips.restoreTrip(tripId))?.message ?? null,
           }}
         />
       ))}
